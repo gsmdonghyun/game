@@ -187,6 +187,13 @@
   #matchEndOverlay h2{font-size:48px;letter-spacing:6px;margin:0 0 10px;font-weight:900;}
   #matchEndOverlay h2.win{color:#5da8ff;text-shadow:0 0 30px rgba(93,168,255,.8);}
   #matchEndOverlay h2.lose{color:#ff5a4d;text-shadow:0 0 30px rgba(255,90,77,.8);}
+
+  #pointerLockHint{
+    position:fixed;inset:0;z-index:24;display:none;
+    align-items:center;justify-content:center;
+    background:rgba(0,0,0,0.35);color:#fff;font-size:20px;font-weight:800;
+    letter-spacing:1px;text-shadow:0 2px 8px rgba(0,0,0,.7);cursor:pointer;
+  }
 </style>
 </head>
 <body>
@@ -288,6 +295,7 @@
 
 <div id="restrainBanner">속박됨 - 행동불가</div>
 <div id="dmgFlash"></div>
+<div id="pointerLockHint">클릭해서 조작을 재개하세요</div>
 
 <div id="matchEndOverlay">
   <h2 id="matchEndTitle">승리</h2>
@@ -411,11 +419,30 @@ function init(){
     document.getElementById('joinCodeInput').value = roomFromUrl.toUpperCase();
   }
 
-  document.addEventListener('pointerlockchange', ()=>{
-    if(document.pointerLockElement !== document.body && started){
-      // show overlay again lightly (optional) - keep game running w/o mouse look
+  document.addEventListener('pointerlockchange', onPointerLockChange);
+
+  // Alt+Tab, Esc, 화면 이탈 등으로 포인터락이 풀렸을 때
+  // 사용자가 다시 클릭하면 커서를 재고정한다.
+  document.getElementById('pointerLockHint').addEventListener('click', requestGameLock);
+  document.body.addEventListener('click', ()=>{
+    if(started && !matchOver && document.pointerLockElement !== document.body){
+      requestGameLock();
     }
   });
+}
+
+function onPointerLockChange(){
+  const hint = document.getElementById('pointerLockHint');
+  if(document.pointerLockElement !== document.body && started && !matchOver){
+    hint.style.display = 'flex'; // 커서 고정이 풀렸으니 다시 클릭하라는 안내 표시
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+function requestGameLock(){
+  if(!started || matchOver) return;
+  document.body.requestPointerLock();
 }
 
 /* =========================================================
@@ -1941,6 +1968,9 @@ function spawnShrineSlash(centerPos){
   blade.rotation.set(Math.random()*Math.PI*2, Math.random()*Math.PI*2, Math.random()*Math.PI*2);
   scene.add(blade);
 
+  // 참격의 시각적 크기에 맞춘 판정 반경. 이 범위 안에 상대가 실제로 있어야만 데미지가 들어간다.
+  const hitRadius = size * 0.55;
+  let hit = false;
   let life = 0;
   const duration = 0.28;
   activeObjects.push({
@@ -1949,6 +1979,9 @@ function spawnShrineSlash(centerPos){
       const p = life/duration;
       blade.material.opacity = 0.9*(1-p);
       blade.scale.setScalar(1 + p*0.8);
+      if(!hit && checkRemoteHit(pos, hitRadius, blade.userData.damage)){
+        hit = true; // 참격 하나당 판정은 1회만
+      }
       if(life>duration){ scene.remove(blade); return true; }
       return false;
     }
@@ -2030,21 +2063,9 @@ function updateGojoDomainRestraint(){
 let remoteWasRestrained = false;
 
 function updateSukunaShrineDamage(dt){
-  // 내가 스쿠나이고 내 복마어주자가 열려있을 때, 상대가 영역 안에 있으면 초당 30 데미지 틱
-  if(character!=='sukuna' || !domainSukuna || !netConnected || !remotePlayer) return;
-  const center = domainSukuna.group.position;
-  const inside = remotePlayer.position.distanceTo(center) <= 15;
-  if(inside){
-    shrineDamageTimer -= dt;
-    if(shrineDamageTimer <= 0){
-      shrineDamageTimer = 1.0; // 초당 1회, 30 데미지 (필중)
-      sendNet({t:'h', dmg:SHRINE_SLASH_DAMAGE});
-    }
-  } else {
-    shrineDamageTimer = 0;
-  }
+  // 복마어주자는 영역 안에 있다는 것만으로 데미지를 주지 않는다.
+  // 실제 데미지는 spawnShrineSlash()가 만든 참격 하나하나가 상대와 직접 판정되어야 들어간다(아래 참조).
 }
-let shrineDamageTimer = 0;
 
 /* =========================================================
    스킬 사용 (마나 비용 / 쿨타임 / 영역 지속시간)
