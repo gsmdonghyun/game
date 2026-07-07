@@ -544,13 +544,14 @@ function makeRoomCode(){
 }
 
 function setupRoomActions(){
-  // Trystero 0.23+ 부터 makeAction()은 [send, get] 배열이 아니라
-  // {send, onMessage} 형태의 액션 객체를 반환한다.
+  // Trystero 0.25+ 부터 makeAction()은 [send, get] 배열이 아니라
+  // {send, onMessage} 형태의 액션 객체를 반환하고,
+  // send()의 대상 지정은 두번째 인자를 {target: peerId} 형태로 넘겨야 한다.
   const gameAction = room.makeAction('game');
   const charAction = room.makeAction('char');
 
-  sendGameAction = (data, target)=> gameAction.send(data, target);
-  sendCharAction = (data, target)=> charAction.send(data, target);
+  sendGameAction = (data, target)=> gameAction.send(data, target ? {target} : undefined);
+  sendCharAction = (data, target)=> charAction.send(data, target ? {target} : undefined);
 
   gameAction.onMessage = (data)=>{ handleNetMessage(data); };
 
@@ -572,9 +573,11 @@ function setupRoomActions(){
     }
   };
 
-  room.onPeerLeave(()=>{
+  // Trystero 0.25+ 부터 onPeerJoin/onPeerLeave는 함수 호출이 아니라
+  // 속성에 콜백을 대입하는 방식이다 (room.onPeerLeave = fn)
+  room.onPeerLeave = ()=>{
     netConnected = false;
-  });
+  };
 }
 
 async function hostRoom(hostChar){
@@ -597,10 +600,10 @@ async function hostRoom(hostChar){
     document.getElementById('hostRoomCodeDisplay').textContent = code;
     setupRoomActions();
 
-    room.onPeerJoin((peerId)=>{
+    room.onPeerJoin = (peerId)=>{
       setHostStatus('상대방이 접속했습니다! 연결을 마무리하는 중…', true);
       sendCharAction({character:selectedCharacter}, peerId);
-    });
+    };
 
     setHostStatus('상대방 접속을 기다리는 중…', true);
   }catch(e){
@@ -645,9 +648,9 @@ async function joinWithCode(){
     room = window.__joinRoom({appId: TRYSTERO_APP_ID}, code);
     setupRoomActions();
 
-    room.onPeerJoin(()=>{
+    room.onPeerJoin = ()=>{
       statusEl.innerHTML = '<span class="spinner"></span>연결됨! 캐릭터 정보를 받는 중…';
-    });
+    };
   }catch(e){
     console.error('참가 오류:', e);
     statusEl.textContent = '연결 중 오류가 발생했습니다: ' + (e && e.message ? e.message : String(e));
