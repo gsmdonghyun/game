@@ -144,7 +144,7 @@
   #skillPreview .skCost{opacity:.6;font-size:11.5px;white-space:nowrap;}
 
   #stepMode{display:flex;gap:16px;margin-top:30px;}
-  #stepCreate, #stepHostWait, #stepJoin{display:flex;flex-direction:column;align-items:center;}
+  #stepCreate, #stepHostWait, #stepJoin, #stepLobby{display:flex;flex-direction:column;align-items:center;}
   .backLink{
     margin-top:16px;opacity:.5;font-size:12px;cursor:pointer;letter-spacing:1px;
   }
@@ -290,6 +290,24 @@
 
     <p class="statusText" id="joinStatus"></p>
     <div class="backLink" id="backFromJoin">‹ 뒤로</div>
+  </div>
+
+  <div id="stepLobby" style="display:none;">
+    <div class="stepLabel">상대방과 연결되었습니다</div>
+    <div style="display:flex;gap:22px;align-items:center;margin:14px 0 6px;">
+      <div style="text-align:center;">
+        <div style="font-size:11px;opacity:.55;letter-spacing:1px;">나</div>
+        <div id="lobbyMyChar" style="font-size:16px;font-weight:800;margin-top:2px;"></div>
+      </div>
+      <div style="opacity:.4;font-size:18px;font-weight:800;">VS</div>
+      <div style="text-align:center;">
+        <div style="font-size:11px;opacity:.55;letter-spacing:1px;">상대</div>
+        <div id="lobbyOppChar" style="font-size:16px;font-weight:800;margin-top:2px;"></div>
+      </div>
+    </div>
+    <div class="btn" id="lobbyStartBtn">게임 시작</div>
+    <p class="statusText" id="lobbyStatus"></p>
+    <div class="backLink" id="leaveLobbyBtn">‹ 나가기</div>
   </div>
 </div>
 
@@ -477,7 +495,7 @@ function renderSkillPreview(ch){
 }
 
 function showStep(id){
-  ['stepMode','stepCreate','stepHostWait','stepJoin'].forEach(s=>{
+  ['stepMode','stepCreate','stepHostWait','stepJoin','stepLobby'].forEach(s=>{
     document.getElementById(s).style.display = (s===id) ? 'flex' : 'none';
   });
 }
@@ -530,7 +548,18 @@ function setupCharacterSelect(){
   });
 
   document.getElementById('matchEndBtn').addEventListener('click', ()=>{
-    location.reload();
+    returnToLobby();
+  });
+
+  document.getElementById('lobbyStartBtn').addEventListener('click', ()=>{
+    if(!netConnected || started) return;
+    sendGameAction({t:'start'});
+    startMultiplayerMatch();
+  });
+
+  document.getElementById('leaveLobbyBtn').addEventListener('click', ()=>{
+    resetConnection();
+    showStep('stepMode');
   });
 }
 
@@ -592,11 +621,11 @@ function setupRoomActions(){
       selectedCharacter = (remoteChar==='gojo') ? 'sukuna' : 'gojo';
       sendCharAction({character:selectedCharacter}, peerId);
       netConnected = true;
-      startMultiplayerMatch();
+      enterLobby();
     } else {
       remoteChar = data.character;
       netConnected = true;
-      startMultiplayerMatch();
+      enterLobby();
     }
   };
 
@@ -645,6 +674,9 @@ function resetConnection(){
   netConnected = false;
   sendGameAction = null;
   sendCharAction = null;
+  remoteChar = null;
+  if(remotePlayer){ scene.remove(remotePlayer); remotePlayer = null; remoteBodyParts = null; }
+  if(remoteDomainMesh){ scene.remove(remoteDomainMesh); remoteDomainMesh = null; }
 }
 
 function setHostStatus(text, showSpinner, isError){
@@ -702,19 +734,76 @@ function broadcastStateThrottled(dt){
     t:'s',
     x:player.position.x, y:player.position.y, z:player.position.z,
     ry:player.rotation.y,
-    moving:isMoving
+    moving:isMoving,
+    hp:hp // 상대 화면에 내 HP가 실시간으로 보이도록 매 상태 전송에 포함
   });
 }
 
+function enterLobby(){
+  document.getElementById('lobbyMyChar').textContent = (selectedCharacter==='gojo') ? '고죠 사토루' : '료멘 스쿠나';
+  document.getElementById('lobbyOppChar').textContent = (remoteChar==='gojo') ? '고죠 사토루' : '료멘 스쿠나';
+  document.getElementById('lobbyStatus').textContent = '';
+  document.getElementById('startOverlay').style.display = 'flex';
+  showStep('stepLobby');
+}
+
+/* 라운드(한 판) 시작 전 상태를 깨끗하게 되돌린다.
+   매치 시작 시와 로비 복귀 시 양쪽에서 모두 호출해, 어느 경로로 오든 상태가 항상 정상화되도록 한다. */
+function resetRoundState(){
+  // 위치/시점 초기화
+  player.position.set(0, 0, 0);
+  player.rotation.y = 0;
+  yaw = 0; pitch = -0.12;
+  remoteState.pos.set(0, 0, 6);
+  remoteState.rotY = 0;
+  remoteState.moving = false;
+  if(remotePlayer){
+    remotePlayer.position.set(0, 0, 6);
+    remotePlayer.rotation.y = 0;
+  }
+
+  // 영역전개 강제 종료
+  if(domainGojo){ scene.remove(domainGojo.group); domainGojo = null; }
+  if(domainSukuna){ scene.remove(domainSukuna.group); domainSukuna = null; }
+  if(remoteDomainMesh){ scene.remove(remoteDomainMesh); remoteDomainMesh = null; }
+  domainTimer.gojo = 0;
+  domainTimer.sukuna = 0;
+
+  // 쿨타임/속박/마나흡수 타이머 초기화
+  cooldowns.gojo = {1:0, 2:0, 3:0, 4:0};
+  cooldowns.sukuna = {1:0, 2:0, 3:0, 4:0};
+  restrained = false;
+  remoteWasRestrained = false;
+  manaSiphonTimer = 0;
+  document.getElementById('restrainBanner').style.display = 'none';
+
+  // 체력/마나 리셋
+  hp = maxHpOf(character);
+  mana = maxManaOf(character);
+  remoteState.hp = maxHpOf(remoteChar);
+  updateResourceUI();
+
+  matchOver = false;
+  document.getElementById('matchEndOverlay').style.display = 'none';
+}
+
 function startMultiplayerMatch(){
+  if(started) return; // 중복 시작 방지
   character = selectedCharacter;
+  buildRemotePlayer(remoteChar);
+  resetRoundState();
   applyCharacterAppearance();
   applyViewVisibility(viewMode);
-  buildRemotePlayer(remoteChar);
 
   document.getElementById('startOverlay').style.display = 'none';
   document.body.requestPointerLock();
   started = true;
+}
+
+function returnToLobby(){
+  resetRoundState();
+  started = false;
+  enterLobby();
 }
 
 function onResize(){
@@ -1008,8 +1097,9 @@ function updateOpponentHpUI(){
   const el = document.getElementById('oppHpFill');
   const num = document.getElementById('oppHpNum');
   if(!el) return;
-  el.style.width = (remoteState.hp/MAX_HP*100) + '%';
-  num.textContent = Math.ceil(remoteState.hp) + '/' + MAX_HP;
+  const mh = maxHpOf(remoteChar);
+  el.style.width = (remoteState.hp/mh*100) + '%';
+  num.textContent = Math.ceil(remoteState.hp) + '/' + mh;
 }
 
 /* --- 원격 스킬 재생 원점/방향을 로컬 계산과 분리해서 받기 위한 헬퍼 --- */
@@ -1056,12 +1146,17 @@ function spawnHitSpark(pos){
 let matchOver = false;
 
 function handleNetMessage(msg){
+  if(msg.t === 'start'){ // 상대가 로비에서 '게임 시작'을 눌렀음 -> 나도 즉시 시작
+    startMultiplayerMatch();
+    return;
+  }
   if(matchOver) return;
 
-  if(msg.t === 's'){ // 상대방 상태(위치/회전/이동여부)
+  if(msg.t === 's'){ // 상대방 상태(위치/회전/이동여부/HP)
     remoteState.pos.set(msg.x, msg.y, msg.z);
     remoteState.rotY = msg.ry;
     remoteState.moving = msg.moving;
+    if(typeof msg.hp === 'number') remoteState.hp = msg.hp;
   }
   else if(msg.t === 'k'){ // 상대방 스킬 사용 -> 이펙트만 재생(피격 판정은 안 함, 상대가 이미 판정해서 보냄)
     const origin = remoteOriginVector(msg.o);
@@ -1072,11 +1167,16 @@ function handleNetMessage(msg){
     hp = Math.max(0, hp - msg.dmg);
     updateResourceUI();
     flashDamage();
+    sendNet({t:'s', x:player.position.x, y:player.position.y, z:player.position.z, ry:player.rotation.y, moving:isMoving, hp:hp}); // 상대 HP UI가 지연 없이 바로 반영되도록 즉시 동기화
     if(hp<=0) onLocalDeath();
   }
   else if(msg.t === 'r'){ // 속박 상태 변경(상대의 무량공처에 의해)
     restrained = msg.on;
     document.getElementById('restrainBanner').style.display = restrained ? 'block' : 'none';
+  }
+  else if(msg.t === 'md'){ // 속박 중 마나 흡수(상대의 무량공처에 의해 초당 5~10 랜덤 차감)
+    mana = Math.max(0, mana - msg.amt);
+    updateResourceUI();
   }
   else if(msg.t === 'dom'){ // 상대방 영역전개 시각 동기화
     setRemoteDomainVisual(msg.on, msg.kind, msg.pos);
@@ -1989,37 +2089,44 @@ function spawnShrineSlash(centerPos){
 }
 
 /* =========================================================
-   HP / 마나 (반전술식 자동 회복)
+   HP / 마나 (캐릭터별 기본치 + 반전술식 자동 회복)
 ========================================================= */
-const MAX_HP = 100;
-const MAX_MANA = 300;
-let hp = MAX_HP;
-let mana = MAX_MANA;
+const MAX_HP_BY_CHAR = { gojo:150, sukuna:144 };
+const MAX_MANA_BY_CHAR = { gojo:500, sukuna:444 };
+function maxHpOf(ch){ return MAX_HP_BY_CHAR[ch] || 100; }
+function maxManaOf(ch){ return MAX_MANA_BY_CHAR[ch] || 300; }
+
+let hp = maxHpOf(character);
+let mana = maxManaOf(character);
 
 function updateResourceUI(){
-  document.getElementById('hpFill').style.width = (hp/MAX_HP*100) + '%';
-  document.getElementById('mpFill').style.width = (mana/MAX_MANA*100) + '%';
-  document.getElementById('hpNum').textContent = Math.ceil(hp) + '/' + MAX_HP;
-  document.getElementById('mpNum').textContent = Math.ceil(mana) + '/' + MAX_MANA;
+  const mh = maxHpOf(character), mm = maxManaOf(character);
+  document.getElementById('hpFill').style.width = (hp/mh*100) + '%';
+  document.getElementById('mpFill').style.width = (mana/mm*100) + '%';
+  document.getElementById('hpNum').textContent = Math.ceil(hp) + '/' + mh;
+  document.getElementById('mpNum').textContent = Math.ceil(mana) + '/' + mm;
 }
 
 function updateResources(dt){
-  // 반전술식: 마나가 100 초과일 때만 HP가 초당 5씩 서서히 회복됨 (마나 100 이하면 회복 정지)
-  if(mana > 100){
-    hp = Math.min(MAX_HP, hp + 5*dt);
-  }
+  const mh = maxHpOf(character), mm = maxManaOf(character);
 
   const gojoDraining = !!domainGojo;
   const sukunaDraining = !!domainSukuna;
 
+  // 속박된 상태(행동불가)에서는 반전술식 자동 회복도 정지된다
+  // 단, 자신의 영역전개 중에는 마나만 소모될 뿐 HP 반전술식 회복은 그대로 유지된다
+  if(!restrained){
+    hp = Math.min(mh, hp + 10*dt); // 체력 회복 초당 10 고정
+  }
+
   if(gojoDraining || sukunaDraining){
-    // 영역전개 중엔 반전술식 회복 대신, 열려있는 영역 개수만큼 초당 30씩 순수 소모 (10초 풀로 유지 시 정확히 300 소모)
+    // 영역전개 중엔 마나 반전술식 회복 대신, 열려있는 영역 개수만큼 초당 30씩 순수 소모
     let drain = 0;
     if(gojoDraining) drain += 30;
     if(sukunaDraining) drain += 30;
     mana = Math.max(0, mana - drain*dt);
-  } else {
-    mana = Math.min(MAX_MANA, mana + 10*dt); // 마나 회복 초당 10으로 변경
+  } else if(!restrained){
+    mana = Math.min(mm, mana + 15*dt); // 마나 회복 초당 15 고정
   }
 
   // 마나가 바닥나면 해당 영역 자동 종료 + 강제 종료는 항상 풀 쿨타임 적용(단축 없음)
@@ -2044,13 +2151,14 @@ function updateResources(dt){
 ========================================================= */
 let enemies = []; // {mesh, restrained} 형태로 추후 등록
 
-function updateGojoDomainRestraint(){
+function updateGojoDomainRestraint(dt){
   // 내가 고죠이고 내 무량공처가 열려있을 때, 상대(원격 플레이어)가 영역 안에 있으면 속박 메시지 전송
   if(character!=='gojo' || !domainGojo || !netConnected || !remotePlayer){
     if(remoteWasRestrained){
       remoteWasRestrained = false; // 영역이 닫히면 상태 리셋
       if(netConnected) sendNet({t:'r', on:false}); // 상대에게 속박 해제 메시지 전송(핵심 수정)
     }
+    manaSiphonTimer = 0;
     return;
   }
   const center = domainGojo.group.position;
@@ -2058,9 +2166,23 @@ function updateGojoDomainRestraint(){
   if(inside !== remoteWasRestrained){
     remoteWasRestrained = inside;
     sendNet({t:'r', on:inside});
+    if(!inside) manaSiphonTimer = 0;
+  }
+
+  // 속박된 상대의 마나를 초당 5~10 랜덤으로 빨아들여 내 마나로 회복
+  if(inside){
+    manaSiphonTimer -= dt;
+    if(manaSiphonTimer <= 0){
+      manaSiphonTimer = 1.0; // 1초에 한 번
+      const amt = 5 + Math.random()*5; // 5~10 랜덤
+      sendNet({t:'md', amt}); // 상대에게 마나 차감 전달
+      mana = Math.min(maxManaOf(character), mana + amt); // 흡수한 만큼 내 마나 회복
+      updateResourceUI();
+    }
   }
 }
 let remoteWasRestrained = false;
+let manaSiphonTimer = 0;
 
 function updateSukunaShrineDamage(dt){
   // 복마어주자는 영역 안에 있다는 것만으로 데미지를 주지 않는다.
@@ -2311,7 +2433,7 @@ function animate(){
     updateCooldowns(dt);
     updateDomainDurations(dt);
     updateResources(dt);
-    updateGojoDomainRestraint();
+    updateGojoDomainRestraint(dt);
     updateSukunaShrineDamage(dt);
     updateSkillUI();
     updateRemotePlayer(dt);
