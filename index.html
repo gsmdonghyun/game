@@ -265,28 +265,21 @@
   </div>
 
   <div id="stepHostWait" style="display:none;">
-    <div class="stepLabel">① 이 코드를 복사해서 상대방에게 보내주세요</div>
-    <textarea class="codeBox" id="hostOfferBox" readonly placeholder="코드 생성 중…"></textarea>
-    <div class="btn" id="copyHostOfferBtn">코드 복사</div>
+    <div class="stepLabel">이 코드를 상대방에게 알려주세요</div>
+    <div class="codeBox" id="hostRoomCodeDisplay" style="display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;letter-spacing:5px;height:auto;">------</div>
+    <div style="display:flex;gap:8px;">
+      <div class="btn" id="copyHostCodeBtn">코드 복사</div>
+      <div class="btn" id="copyHostLinkBtn">초대 링크 복사</div>
+    </div>
 
-    <div class="stepLabel">② 상대방이 보내준 코드를 여기에 붙여넣으세요</div>
-    <textarea class="codeBox" id="hostAnswerInput" placeholder="상대방 코드 붙여넣기"></textarea>
-    <div class="btn" id="connectHostBtn">연결하기</div>
-
-    <p class="statusText" id="hostWaitStatus"></p>
+    <p class="statusText" id="hostWaitStatus"><span class="spinner"></span>상대방 접속을 기다리는 중…</p>
     <div class="backLink" id="backFromHostWait">‹ 취소</div>
   </div>
 
   <div id="stepJoin" style="display:none;">
-    <div class="stepLabel">① 호스트에게 받은 코드를 붙여넣으세요</div>
-    <textarea class="codeBox" id="joinCodeInput" placeholder="호스트 코드 붙여넣기"></textarea>
-    <div class="btn" id="submitJoinBtn">확인</div>
-
-    <div id="guestReplyBox" style="display:none;">
-      <div class="stepLabel">② 이 코드를 복사해서 호스트에게 다시 보내주세요</div>
-      <textarea class="codeBox" id="guestAnswerBox" readonly></textarea>
-      <div class="btn" id="copyGuestAnswerBtn">코드 복사</div>
-    </div>
+    <div class="stepLabel">호스트에게 받은 코드를 입력하세요</div>
+    <textarea class="codeBox" id="joinCodeInput" placeholder="예: A1B2C3" style="height:40px;text-align:center;font-size:18px;letter-spacing:3px;"></textarea>
+    <div class="btn" id="submitJoinBtn">참가하기</div>
 
     <p class="statusText" id="joinStatus"></p>
     <div class="backLink" id="backFromJoin">‹ 뒤로</div>
@@ -348,6 +341,20 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module">
+  // Trystero: 서버 없이 짧은 방 코드만으로 두 브라우저를 WebRTC로 자동 연결해주는 라이브러리.
+  // 공개 Nostr 릴레이망을 시그널링 채널로 사용하므로 별도 가입/설정이 필요 없다.
+  window.__trysteroReady = import('https://esm.run/trystero')
+    .then(mod => {
+      window.__joinRoom = mod.joinRoom;
+      return mod.joinRoom;
+    })
+    .catch(err => {
+      console.error('Trystero 모듈 로딩 실패:', err);
+      window.__trysteroLoadError = err;
+      throw err;
+    });
+</script>
 <script>
 /* =========================================================
    무량공처 :: SETUP
@@ -396,6 +403,13 @@ function init(){
   document.addEventListener('mousemove', onMouseMove);
 
   setupCharacterSelect();
+
+  // 초대 링크(?room=코드)로 들어온 경우, 참가 화면을 열고 코드를 자동으로 채워둔다
+  const roomFromUrl = new URLSearchParams(location.search).get('room');
+  if(roomFromUrl){
+    showStep('stepJoin');
+    document.getElementById('joinCodeInput').value = roomFromUrl.toUpperCase();
+  }
 
   document.addEventListener('pointerlockchange', ()=>{
     if(document.pointerLockElement !== document.body && started){
@@ -476,109 +490,127 @@ function setupCharacterSelect(){
     hostRoom(selectedCharacter);
   });
 
-  document.getElementById('connectHostBtn').addEventListener('click', hostApplyAnswer);
-  document.getElementById('submitJoinBtn').addEventListener('click', joinWithPastedCode);
+  document.getElementById('submitJoinBtn').addEventListener('click', joinWithCode);
 
-  document.getElementById('copyHostOfferBtn').addEventListener('click', ()=>copyBoxText('hostOfferBox'));
-  document.getElementById('copyGuestAnswerBtn').addEventListener('click', ()=>copyBoxText('guestAnswerBox'));
+  document.getElementById('copyHostCodeBtn').addEventListener('click', ()=>{
+    const code = document.getElementById('hostRoomCodeDisplay').textContent;
+    copyText(code);
+  });
+  document.getElementById('copyHostLinkBtn').addEventListener('click', ()=>{
+    const code = document.getElementById('hostRoomCodeDisplay').textContent;
+    const url = location.origin + location.pathname + '?room=' + code;
+    copyText(url);
+  });
 
   document.getElementById('matchEndBtn').addEventListener('click', ()=>{
     location.reload();
   });
 }
 
-function copyBoxText(id){
-  const el = document.getElementById(id);
-  el.select();
+function copyText(text){
   try{
-    navigator.clipboard.writeText(el.value);
+    navigator.clipboard.writeText(text);
   }catch(e){
-    document.execCommand('copy');
+    const tmp = document.createElement('textarea');
+    tmp.value = text;
+    tmp.style.position = 'fixed';
+    tmp.style.opacity = '0';
+    document.body.appendChild(tmp);
+    tmp.select();
+    try{ document.execCommand('copy'); }catch(e2){}
+    document.body.removeChild(tmp);
   }
 }
 
 /* =========================================================
-   멀티플레이 네트워킹 (WebRTC P2P, 수동 코드 교환 방식)
-   - Claude.ai 저장소에 의존하지 않음: 파일만 있으면 어디서든 동작
-   - 두 사람이 짧은 텍스트 코드를 한 번씩 복사-붙여넣기 해서 연결을 맺음
-   - 연결 이후 실제 게임 데이터는 전부 WebRTC로 실시간 P2P 통신
+   멀티플레이 네트워킹 (Trystero 기반 WebRTC P2P 자동 매칭)
+   - Netlify 같은 정적 호스팅에서도 별도 서버/계정 없이 동작
+   - 호스트가 만든 짧은 방 코드 하나만 공유하면 자동으로 연결됨
+     (기존의 코드 복붙 왕복 절차 불필요 - Trystero가 공개 시그널링망으로 처리)
+   - 연결 이후 실제 게임 데이터는 여전히 WebRTC로 실시간 P2P 통신
 ========================================================= */
-let pc = null, dc = null;
+const TRYSTERO_APP_ID = 'tactical-melee-jjk-v1'; // 이 앱만의 고유 네임스페이스
+let room = null;
 let netConnected = false;
 let netRole = null; // 'host' | 'guest'
 let remoteChar = null;
+let sendGameAction = null, sendCharAction = null;
 
-function encodeSignal(obj){
-  return btoa(encodeURIComponent(JSON.stringify(obj)));
-}
-function decodeSignal(str){
-  return JSON.parse(decodeURIComponent(atob(str.trim())));
+function makeRoomCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 0/O, 1/I 등 헷갈리는 문자 제외
+  let code = '';
+  for(let i=0;i<6;i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
 }
 
-function waitIceGatheringComplete(peer){
-  return new Promise(resolve=>{
-    if(peer.iceGatheringState === 'complete'){ resolve(); return; }
-    const timeout = setTimeout(resolve, 4000); // 너무 오래 걸리면 그냥 진행
-    peer.addEventListener('icegatheringstatechange', function check(){
-      if(peer.iceGatheringState === 'complete'){
-        clearTimeout(timeout);
-        peer.removeEventListener('icegatheringstatechange', check);
-        resolve();
-      }
-    });
+function setupRoomActions(){
+  const [sendGame, getGame] = room.makeAction('game');
+  const [sendChar, getChar] = room.makeAction('char');
+  sendGameAction = sendGame;
+  sendCharAction = sendChar;
+
+  getGame((data)=>{ handleNetMessage(data); });
+
+  // 캐릭터 정보 교환: 호스트가 먼저 자기 캐릭터를 보내면,
+  // 게스트는 반대 캐릭터로 자동 배정된 뒤 자기 캐릭터를 답장으로 보낸다.
+  getChar((data, peerId)=>{
+    if(netConnected) return; // 중복 처리 방지
+    if(netRole === 'guest'){
+      remoteChar = data.character;
+      selectedCharacter = (remoteChar==='gojo') ? 'sukuna' : 'gojo';
+      sendCharAction({character:selectedCharacter}, peerId);
+      netConnected = true;
+      startMultiplayerMatch();
+    } else {
+      remoteChar = data.character;
+      netConnected = true;
+      startMultiplayerMatch();
+    }
   });
-}
 
-function createPeerConnection(){
-  return new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  room.onPeerLeave(()=>{
+    netConnected = false;
   });
 }
 
 async function hostRoom(hostChar){
-  if(pc) return; // 이미 진행 중이면 중복 실행 방지
+  if(room) return; // 이미 진행 중이면 중복 실행 방지
   netRole = 'host';
   selectedCharacter = hostChar;
   showStep('stepHostWait');
-  document.getElementById('hostOfferBox').value = '';
-  document.getElementById('hostOfferBox').placeholder = '코드 생성 중…';
-  setHostStatus('연결 코드를 생성하는 중…', true);
+  document.getElementById('hostRoomCodeDisplay').textContent = '------';
+  setHostStatus('방을 만드는 중…', true);
 
-  pc = createPeerConnection();
-  dc = pc.createDataChannel('game');
-  setupDataChannel(dc);
+  if(!window.isSecureContext){
+    setHostStatus('이 기능은 https 주소(또는 localhost)에서만 동작합니다. file://로 열었다면 Netlify에 배포한 뒤 https 주소로 접속해서 테스트해주세요.', false, true);
+    return;
+  }
 
   try{
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitIceGatheringComplete(pc);
+    await window.__trysteroReady; // Trystero 모듈 로딩 대기
+    const code = makeRoomCode();
+    room = window.__joinRoom({appId: TRYSTERO_APP_ID}, code);
+    document.getElementById('hostRoomCodeDisplay').textContent = code;
+    setupRoomActions();
 
-    const code = encodeSignal({character:hostChar, sdp:pc.localDescription});
-    document.getElementById('hostOfferBox').value = code;
-    setHostStatus('①번 코드를 상대방에게 보내고, 상대가 보내준 코드를 ②에 붙여넣어 주세요.', false);
+    room.onPeerJoin((peerId)=>{
+      setHostStatus('상대방이 접속했습니다! 연결을 마무리하는 중…', true);
+      sendCharAction({character:selectedCharacter}, peerId);
+    });
+
+    setHostStatus('상대방 접속을 기다리는 중…', true);
   }catch(e){
-    setHostStatus('코드 생성 중 오류가 발생했습니다.', false, true);
+    console.error('방 생성 오류:', e);
+    setHostStatus('방 생성 중 오류가 발생했습니다: ' + (e && e.message ? e.message : String(e)), false, true);
     resetConnection();
   }
 }
 
-async function hostApplyAnswer(){
-  const raw = document.getElementById('hostAnswerInput').value.trim();
-  if(!raw || !pc) return;
-  try{
-    const data = decodeSignal(raw);
-    remoteChar = data.character;
-    setHostStatus('연결 중…', true);
-    await pc.setRemoteDescription(data.sdp);
-  }catch(e){
-    setHostStatus('코드가 올바르지 않습니다. 다시 확인해주세요.', false, true);
-  }
-}
-
 function resetConnection(){
-  if(pc){ try{ pc.close(); }catch(e){} pc = null; }
-  dc = null;
+  if(room){ try{ room.leave(); }catch(e){} room = null; }
   netConnected = false;
+  sendGameAction = null;
+  sendCharAction = null;
 }
 
 function setHostStatus(text, showSpinner, isError){
@@ -587,65 +619,42 @@ function setHostStatus(text, showSpinner, isError){
   el.classList.toggle('errorText', !!isError);
 }
 
-async function joinWithPastedCode(){
-  if(pc) return; // 이미 진행 중이면 중복 실행 방지
+async function joinWithCode(){
+  if(room) return; // 이미 진행 중이면 중복 실행 방지
   const statusEl = document.getElementById('joinStatus');
   statusEl.classList.remove('errorText');
 
-  const raw = document.getElementById('joinCodeInput').value.trim();
-  if(!raw) return;
+  const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+  if(!code) return;
 
-  let hostData;
-  try{
-    hostData = decodeSignal(raw);
-  }catch(e){
-    statusEl.textContent = '코드가 올바르지 않습니다. 다시 확인해주세요.';
+  if(!window.isSecureContext){
+    statusEl.textContent = '이 기능은 https 주소(또는 localhost)에서만 동작합니다. file://로 열었다면 Netlify에 배포한 뒤 https 주소로 접속해서 테스트해주세요.';
     statusEl.classList.add('errorText');
     return;
   }
 
   netRole = 'guest';
-  remoteChar = hostData.character;
-  selectedCharacter = (hostData.character==='gojo') ? 'sukuna' : 'gojo';
-
-  statusEl.innerHTML = '<span class="spinner"></span>상대는 '+(remoteChar==='gojo'?'고죠 사토루':'료멘 스쿠나')+', 당신은 '+(selectedCharacter==='gojo'?'고죠 사토루':'료멘 스쿠나')+'로 참전합니다. 코드 생성 중…';
-
-  pc = createPeerConnection();
-  pc.ondatachannel = (ev)=>{ dc = ev.channel; setupDataChannel(dc); };
+  statusEl.innerHTML = '<span class="spinner"></span>호스트에게 연결하는 중…';
 
   try{
-    await pc.setRemoteDescription(hostData.sdp);
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    await waitIceGatheringComplete(pc);
+    await window.__trysteroReady; // Trystero 모듈 로딩 대기
+    room = window.__joinRoom({appId: TRYSTERO_APP_ID}, code);
+    setupRoomActions();
 
-    const code = encodeSignal({character:selectedCharacter, sdp:pc.localDescription});
-    document.getElementById('guestAnswerBox').value = code;
-    document.getElementById('guestReplyBox').style.display = 'block';
-    statusEl.innerHTML = '②번 코드를 복사해서 호스트에게 다시 보내주세요. 상대방이 코드를 입력하면 자동으로 연결됩니다.';
+    room.onPeerJoin(()=>{
+      statusEl.innerHTML = '<span class="spinner"></span>연결됨! 캐릭터 정보를 받는 중…';
+    });
   }catch(e){
-    statusEl.textContent = '연결 중 오류가 발생했습니다.';
+    console.error('참가 오류:', e);
+    statusEl.textContent = '연결 중 오류가 발생했습니다: ' + (e && e.message ? e.message : String(e));
     statusEl.classList.add('errorText');
     resetConnection();
   }
 }
 
-function setupDataChannel(channel){
-  channel.onopen = ()=>{
-    netConnected = true;
-    startMultiplayerMatch();
-  };
-  channel.onclose = ()=>{
-    netConnected = false;
-  };
-  channel.onmessage = (ev)=>{
-    try{ handleNetMessage(JSON.parse(ev.data)); }catch(e){}
-  };
-}
-
 function sendNet(obj){
-  if(dc && dc.readyState==='open'){
-    try{ dc.send(JSON.stringify(obj)); }catch(e){}
+  if(netConnected && sendGameAction){
+    try{ sendGameAction(obj); }catch(e){}
   }
 }
 
