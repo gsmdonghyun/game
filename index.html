@@ -66,6 +66,16 @@
   .skillSlot.flash{transform:scale(1.12);border-color:#fff;box-shadow:0 0 18px rgba(255,255,255,.8);}
   .skillSlot.blocked{border-color:#ff4d4d;box-shadow:0 0 14px rgba(255,60,60,.7);}
   .skillSlot.active{border-color:#fff;box-shadow:0 0 14px rgba(255,255,255,.6);}
+  .skillSlot.enhanced{
+    border-color:#39ff8f;
+    box-shadow:0 0 10px rgba(57,255,143,.9), 0 0 22px rgba(57,255,143,.6), inset 0 0 10px rgba(57,255,143,.35);
+    animation:neonPulse 1.1s ease-in-out infinite;
+  }
+  .skillSlot.enhanced .name{color:#39ff8f;text-shadow:0 0 6px rgba(57,255,143,.9);}
+  @keyframes neonPulse{
+    0%,100%{ box-shadow:0 0 10px rgba(57,255,143,.9), 0 0 22px rgba(57,255,143,.6), inset 0 0 10px rgba(57,255,143,.35); }
+    50%{ box-shadow:0 0 16px rgba(57,255,143,1), 0 0 34px rgba(57,255,143,.85), inset 0 0 16px rgba(57,255,143,.5); }
+  }
   .cdOverlay{
     position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);
     height:0%;transition:height .1s linear;pointer-events:none;
@@ -470,14 +480,14 @@ const SKILL_INFO = {
   gojo: [
     {key:'Q', name:'아카(赫)', desc:'무한 척력 · 던진 거리만큼 가속', cost:'MP20 · 쿨 3초'},
     {key:'E', name:'아오(蒼)', desc:'무한 인력 · 던진 거리만큼 커짐', cost:'MP20 · 쿨 3초'},
-    {key:'C', name:'무라사키(紫)', desc:'오의 · 가속+성장 결합', cost:'MP50 · 쿨 5초'},
+    {key:'C', name:'무라사키(紫)', desc:'오의 · 가속+성장 결합 (속박: 아카+아오 이후 사용 시 1.5배 강화)', cost:'MP50(강화시 100) · 쿨 5초'},
     {key:'X', name:'무량공처', desc:'영역전개 · 무피해, 속박', cost:'MP초당30 · 10초/쿨30초'}
   ],
   sukuna: [
     {key:'Q', name:'해(解)', desc:'근접 참격', cost:'MP20 · 쿨 1초'},
     {key:'E', name:'팔(捌)', desc:'참격을 멀리 던짐', cost:'MP20 · 쿨 3초'},
-    {key:'C', name:'조(弔)', desc:'불꽃 화살(오의)', cost:'MP50 · 쿨 5초'},
-    {key:'X', name:'복마어주자', desc:'영역전개 · 참격당 30 데미지', cost:'MP초당30 · 10초/쿨30초'}
+    {key:'C', name:'조(弔)', desc:'불꽃 화살(오의) (속박: 영역전개 재사용 대기 중 2배 강화, 쿨타임 1.4배 감소)', cost:'MP50 · 쿨 5초'},
+    {key:'X', name:'복마어주자', desc:'영역전개 · 참격당 15 데미지', cost:'MP초당30 · 10초/쿨30초'}
   ]
 };
 
@@ -735,7 +745,8 @@ function broadcastStateThrottled(dt){
     x:player.position.x, y:player.position.y, z:player.position.z,
     ry:player.rotation.y,
     moving:isMoving,
-    hp:hp // 상대 화면에 내 HP가 실시간으로 보이도록 매 상태 전송에 포함
+    hp:hp, // 상대 화면에 내 HP가 실시간으로 보이도록 매 상태 전송에 포함
+    mana:mana // 영역전개 충돌 판정에 필요해서 마나도 함께 동기화
   });
 }
 
@@ -775,12 +786,16 @@ function resetRoundState(){
   restrained = false;
   remoteWasRestrained = false;
   manaSiphonTimer = 0;
+  domainClashTimer = 0;
+  gojoAkaUsed = false;
+  gojoAoUsed = false;
   document.getElementById('restrainBanner').style.display = 'none';
 
   // 체력/마나 리셋
   hp = maxHpOf(character);
   mana = maxManaOf(character);
   remoteState.hp = maxHpOf(remoteChar);
+  remoteState.mana = maxManaOf(remoteChar);
   updateResourceUI();
 
   matchOver = false;
@@ -1055,7 +1070,8 @@ let remoteState = {
   pos: new THREE.Vector3(0, 0, 6),
   rotY: 0,
   moving: false,
-  hp: 100
+  hp: 100,
+  mana: 300
 };
 let remoteWalkCycle = 0;
 let restrained = false; // 고죠의 무량공처에 속박된 상태(행동불가)
@@ -1157,17 +1173,18 @@ function handleNetMessage(msg){
     remoteState.rotY = msg.ry;
     remoteState.moving = msg.moving;
     if(typeof msg.hp === 'number') remoteState.hp = msg.hp;
+    if(typeof msg.mana === 'number') remoteState.mana = msg.mana;
   }
   else if(msg.t === 'k'){ // 상대방 스킬 사용 -> 이펙트만 재생(피격 판정은 안 함, 상대가 이미 판정해서 보냄)
     const origin = remoteOriginVector(msg.o);
     const dir = remoteForwardVector(msg.d);
-    replayRemoteSkill(msg.n, origin, dir);
+    replayRemoteSkill(msg.n, origin, dir, msg.enhanced);
   }
   else if(msg.t === 'h'){ // 피격
     hp = Math.max(0, hp - msg.dmg);
     updateResourceUI();
     flashDamage();
-    sendNet({t:'s', x:player.position.x, y:player.position.y, z:player.position.z, ry:player.rotation.y, moving:isMoving, hp:hp}); // 상대 HP UI가 지연 없이 바로 반영되도록 즉시 동기화
+    sendNet({t:'s', x:player.position.x, y:player.position.y, z:player.position.z, ry:player.rotation.y, moving:isMoving, hp:hp, mana:mana}); // 상대 HP UI가 지연 없이 바로 반영되도록 즉시 동기화
     if(hp<=0) onLocalDeath();
   }
   else if(msg.t === 'r'){ // 속박 상태 변경(상대의 무량공처에 의해)
@@ -1181,20 +1198,26 @@ function handleNetMessage(msg){
   else if(msg.t === 'dom'){ // 상대방 영역전개 시각 동기화
     setRemoteDomainVisual(msg.on, msg.kind, msg.pos);
   }
+  else if(msg.t === 'shrine'){ // 상대방(스쿠나) 복마어주자 참격 이펙트 재생(피격 판정은 이미 상대가 마쳐서 보냄)
+    spawnShrineSlash(null, 'remote', remoteOriginVector(msg.pos), msg.size);
+  }
+  else if(msg.t === 'domClash'){ // 호스트가 판정한 영역 동시전개 충돌 결과 적용(게스트 측)
+    processDomainClash(msg.result);
+  }
   else if(msg.t === 'die'){ // 상대방이 죽었음 -> 내가 승리
     onMatchEnd(true);
   }
 }
 
-function replayRemoteSkill(n, origin, dir){
+function replayRemoteSkill(n, origin, dir, enhanced){
   if(remoteChar==='gojo'){
     if(n===1) spawnOrb(0xff3131, 0.3, true, false, 0, 'remote', origin, dir);
     else if(n===2) spawnOrb(0x2f7bff, 0.3, false, true, 0, 'remote', origin, dir);
-    else if(n===3) spawnHollowPurple(0, 'remote', origin, dir);
+    else if(n===3) spawnHollowPurple(0, 'remote', origin, dir, enhanced);
   } else {
     if(n===1) spawnSlash(true, false, 0, 'remote', origin, dir);
     else if(n===2) spawnFlyingSlash(0, 'remote', origin, dir);
-    else if(n===3) spawnFireArrow(0, 'remote', origin, dir);
+    else if(n===3) spawnFireArrow(0, 'remote', origin, dir, enhanced);
   }
 }
 
@@ -1205,7 +1228,7 @@ function setRemoteDomainVisual(on, kind, posArr){
     remoteDomainMesh = null;
   }
   if(on && posArr){
-    const radius = 15;
+    const radius = kind==='sukuna' ? SUKUNA_DOMAIN_RADIUS : 15;
     const color = kind==='gojo' ? 0x8b3bff : 0xff2200;
     const group = new THREE.Group();
     group.position.set(posArr[0], posArr[1] + (kind==='gojo' ? 1 : 0), posArr[2]);
@@ -1702,20 +1725,25 @@ function spawnOrb(color, size, fromRight, pull, damage, owner, originOverride, d
   activeObjects.push(obj);
 }
 
-function spawnHollowPurple(damage, owner, originOverride, dirOverride){
+function spawnHollowPurple(damage, owner, originOverride, dirOverride, enhanced){
   owner = owner || 'local';
   const geo = new THREE.SphereGeometry(0.42,20,20);
-  const mat = new THREE.MeshStandardMaterial({color:0x9b30ff, emissive:0x9b30ff, emissiveIntensity:2.2, transparent:true, opacity:0.92});
+  const mat = new THREE.MeshStandardMaterial({
+    color: enhanced ? 0xa9ffce : 0x9b30ff,
+    emissive: enhanced ? 0x39ff8f : 0x9b30ff,
+    emissiveIntensity: enhanced ? 3.0 : 2.2,
+    transparent:true, opacity:0.92
+  });
   const orb = new THREE.Mesh(geo, mat);
   orb.userData.damage = damage || 0;
   orb.userData.owner = owner;
   const start = originOverride || getSkillOrigin(true).lerp(getSkillOrigin(false),0.5);
   orb.position.copy(start);
   scene.add(orb);
-  const light = new THREE.PointLight(0x9b30ff, 6, 20);
+  const light = new THREE.PointLight(enhanced ? 0x39ff8f : 0x9b30ff, enhanced ? 8 : 6, 20);
   orb.add(light);
 
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62,0.05,8,24), new THREE.MeshBasicMaterial({color:0xcf8bff, transparent:true, opacity:0.8}));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62,0.05,8,24), new THREE.MeshBasicMaterial({color: enhanced ? 0xb6ffcf : 0xcf8bff, transparent:true, opacity:0.8}));
   orb.add(ring);
 
   const dir = dirOverride || getForwardVector();
@@ -1727,16 +1755,20 @@ function spawnHollowPurple(damage, owner, originOverride, dirOverride){
   let shook = false;
   let hit = false;
 
+  // 속박 강화 시(아카+아오 사용 후) 거리 비례 가속/성장 폭이 더 커짐
+  const speedGain = enhanced ? 4.5 : 3.0;
+  const growthGain = enhanced ? 0.17 : 0.11;
+
   const obj = {
     update(dt){
       life += dt;
 
       // 아카+아오 결합: 날아간 거리에 비례해 더 빠르고, 더 커지며 날아감
-      speed = baseSpeed + traveled*3.0;
+      speed = baseSpeed + traveled*speedGain;
       orb.position.addScaledVector(dir, speed*dt);
       traveled = orb.position.distanceTo(startPos);
 
-      const growth = 1 + traveled*0.11;
+      const growth = 1 + traveled*growthGain;
       const pulse = Math.sin(life*40)*0.03;
       orb.scale.setScalar(growth + pulse);
 
@@ -1871,7 +1903,7 @@ function spawnEmberParticle(pos){
 }
 
 /* --- 조: 완전한 형태의 불꽃 화살 (화살대+화살촉+깃+화염) --- */
-function spawnFireArrow(damage, owner, originOverride, dirOverride){
+function spawnFireArrow(damage, owner, originOverride, dirOverride, enhanced){
   owner = owner || 'local';
   const group = new THREE.Group();
   group.userData.damage = damage || 0;
@@ -1885,10 +1917,15 @@ function spawnFireArrow(damage, owner, originOverride, dirOverride){
   shaft.rotation.x = Math.PI/2;
   group.add(shaft);
 
-  // 화살촉 (불에 달궈진 금속)
+  // 화살촉 (불에 달궈진 금속) - 강화 시 네온 그린 광택 추가(속박 발동 표시)
   const head = new THREE.Mesh(
     new THREE.ConeGeometry(0.075,0.34,10),
-    new THREE.MeshStandardMaterial({color:0xffb347, emissive:0xff4500, emissiveIntensity:2.4, metalness:0.4, roughness:0.35})
+    new THREE.MeshStandardMaterial({
+      color: enhanced ? 0xb6ffcf : 0xffb347,
+      emissive: enhanced ? 0x39ff8f : 0xff4500,
+      emissiveIntensity: enhanced ? 3.4 : 2.4,
+      metalness:0.4, roughness:0.35
+    })
   );
   head.rotation.x = -Math.PI/2;
   head.position.z = 0.68;
@@ -1911,7 +1948,7 @@ function spawnFireArrow(damage, owner, originOverride, dirOverride){
   flame.position.z = 0.32;
   group.add(flame);
 
-  const light = new THREE.PointLight(0xff5522, 5.5, 14);
+  const light = new THREE.PointLight(enhanced ? 0x39ff8f : 0xff5522, enhanced ? 8 : 5.5, 14);
   light.position.z = 0.4;
   group.add(light);
 
@@ -1958,6 +1995,7 @@ function camShake(mag, dur){ camShakeMag = mag; camShakeTime = dur; }
    영역전개
 ========================================================= */
 let domainGojo = null, domainSukuna = null;
+const SUKUNA_DOMAIN_RADIUS = 22; // 복마어주자 영역 반경(m)
 
 function toggleDomainGojo(){
   if(domainGojo){
@@ -2003,13 +2041,13 @@ function toggleDomainSukuna(){
   group.position.copy(center);
 
   const outer = new THREE.Mesh(
-    new THREE.SphereGeometry(15,40,40),
+    new THREE.SphereGeometry(SUKUNA_DOMAIN_RADIUS,40,40),
     new THREE.MeshStandardMaterial({color:0x5a0000, transparent:true, opacity:0.09, side:THREE.DoubleSide, emissive:0xff2200, emissiveIntensity:0.4})
   );
   group.add(outer);
 
   const wire = new THREE.Mesh(
-    new THREE.SphereGeometry(15,20,20),
+    new THREE.SphereGeometry(SUKUNA_DOMAIN_RADIUS,20,20),
     new THREE.MeshBasicMaterial({color:0xff6a4a, wireframe:true, transparent:true, opacity:0.2})
   );
   group.add(wire);
@@ -2027,7 +2065,7 @@ function updateDomainStatus(){
   const el = document.getElementById('domainStatus');
   const active = [];
   if(domainGojo) active.push('무량공처 전개중 (반경 15m)');
-  if(domainSukuna) active.push('복마어주자 전개중 (반경 15m)');
+  if(domainSukuna) active.push(`복마어주자 전개중 (반경 ${SUKUNA_DOMAIN_RADIUS}m)`);
   if(active.length){
     el.style.display = 'inline-block';
     el.textContent = active.join(' / ');
@@ -2049,24 +2087,132 @@ function updateDomains(dt){
 
     domainSukuna.slashTimer -= dt;
     if(domainSukuna.slashTimer<=0){
-      domainSukuna.slashTimer = 1/20; // 초당 20회
+      domainSukuna.slashTimer = 1/14; // 초당 14회
       spawnShrineSlash(domainSukuna.group.position);
     }
   }
 }
 
-function spawnShrineSlash(centerPos){
-  const r = 2 + Math.random()*11;
-  const ang = Math.random()*Math.PI*2;
-  const h = Math.random()*5;
-  const pos = new THREE.Vector3(centerPos.x + Math.cos(ang)*r, h, centerPos.z + Math.sin(ang)*r);
+/* =========================================================
+   영역전개 동시전개 충돌 판정
+   - 두 플레이어의 영역이 동시에 1.5초 이상 함께 유지되면
+     마나차 -> 체력차 -> (마나,체력 둘다 낮은 쪽) -> (동률: 둘 다 파괴 + 페널티) 순으로 판정
+   - 판정 결과가 어긋나면 안 되므로 host 클라이언트만 판정을 내리고,
+     결과를 'domClash' 메시지로 양쪽에 동일하게 적용한다.
+========================================================= */
+let domainClashTimer = 0;
 
-  const size = 4 + Math.random()*7;
+function updateDomainClash(dt){
+  const myDomainActive = !!(character==='gojo' ? domainGojo : domainSukuna);
+  const oppDomainActive = !!remoteDomainMesh;
+
+  if(myDomainActive && oppDomainActive){
+    domainClashTimer += dt;
+  } else {
+    domainClashTimer = 0;
+    return;
+  }
+
+  // 판정은 host만 내려서 양쪽 클라이언트의 결과가 어긋나지 않도록 한다
+  if(netRole !== 'host') return;
+  if(domainClashTimer < 1.5) return;
+
+  domainClashTimer = 0; // 판정 직후 리셋(다음 충돌까지 재판정 방지)
+
+  const myChar = character, oppChar = remoteChar;
+  const myMana = mana, oppMana = remoteState.mana;
+  const myHp = hp, oppHp = remoteState.hp;
+
+  let result; // 'gojo' | 'sukuna' | 'both' - 파괴되는 쪽(들)의 캐릭터명
+  const manaDiff = myMana - oppMana;
+
+  if(Math.abs(manaDiff) >= 20){
+    // 1. 마나 차이 20 이상 -> 더 낮은 마나 쪽 영역 파괴
+    result = manaDiff < 0 ? myChar : oppChar;
+  } else {
+    const hpDiff = myHp - oppHp;
+    if(Math.abs(hpDiff) >= 20){
+      // 2. 마나 차이는 20 미만, 체력 차이 20 이상 -> 더 낮은 체력 쪽 영역 파괴
+      result = hpDiff < 0 ? myChar : oppChar;
+    } else if(myMana > oppMana && myHp > oppHp){
+      // 3. 마나와 체력 둘 다 상대보다 낮은 쪽이 파괴 (상대가 둘 다 우위인 경우)
+      result = oppChar;
+    } else if(oppMana > myMana && oppHp > myHp){
+      result = myChar;
+    } else {
+      // 4. 마나/체력 둘 다 우위인 쪽이 없음(동률 또는 서로 한쪽씩 우위) -> 둘 다 파괴 + 페널티
+      result = 'both';
+    }
+  }
+
+  sendNet({t:'domClash', result});
+  processDomainClash(result);
+}
+
+// 강제로 자신의 영역을 닫는다(마나 소진과 동일하게 항상 풀 쿨타임 적용)
+function forceCloseMyDomain(){
+  const isGojo = character==='gojo';
+  if(isGojo && domainGojo){
+    toggleDomainGojo();
+    domainTimer.gojo = 0;
+    cooldowns.gojo[4] = SKILL_COOLDOWN.gojo[4];
+    sendNet({t:'dom', on:false, kind:'gojo'});
+  } else if(!isGojo && domainSukuna){
+    toggleDomainSukuna();
+    domainTimer.sukuna = 0;
+    cooldowns.sukuna[4] = SKILL_COOLDOWN.sukuna[4];
+    sendNet({t:'dom', on:false, kind:'sukuna'});
+  }
+}
+
+// 'gojo' | 'sukuna' | 'both' 결과를 로컬 상태에 적용(host, guest 양쪽 모두 이 함수를 통해 동일하게 반영)
+function processDomainClash(result){
+  if(result === character){
+    // 내 영역이 파괴됨
+    forceCloseMyDomain();
+  } else if(result === remoteChar){
+    // 상대 영역이 파괴됨 -> 시각효과는 상대측이 보낼 'dom' off 메시지로도 정리되지만, 즉시 반응성을 위해 먼저 제거
+    if(remoteDomainMesh){ scene.remove(remoteDomainMesh); remoteDomainMesh = null; }
+  } else if(result === 'both'){
+    forceCloseMyDomain();
+    if(remoteDomainMesh){ scene.remove(remoteDomainMesh); remoteDomainMesh = null; }
+
+    // 동률 페널티: 체력 -20%, 마나 -30%
+    hp = Math.max(0, hp * 0.8);
+    mana = Math.max(0, mana * 0.7);
+    updateResourceUI();
+    sendNet({t:'s', x:player.position.x, y:player.position.y, z:player.position.z, ry:player.rotation.y, moving:isMoving, hp:hp, mana:mana});
+    if(hp<=0) onLocalDeath();
+  }
+}
+
+function spawnShrineSlash(centerPos, owner, posOverride, sizeOverride){
+  owner = owner || 'local';
+
+  let pos, size;
+  if(posOverride){
+    // 원격 재생: 상대가 이미 계산한 정확한 위치/크기를 그대로 사용(양쪽 화면에 같은 참격이 보이도록)
+    pos = posOverride;
+    size = sizeOverride;
+  } else {
+    const maxR = SUKUNA_DOMAIN_RADIUS - 3; // 영역 가장자리에서 3m 여유
+    const r = 2 + Math.random()*(maxR-2);
+    const ang = Math.random()*Math.PI*2;
+    const h = Math.random()*5;
+    pos = new THREE.Vector3(centerPos.x + Math.cos(ang)*r, h, centerPos.z + Math.sin(ang)*r);
+    size = 3 + Math.random()*8;
+  }
+
   const blade = createSlashBlade(0xffb0a0, size);
-  blade.userData.damage = SHRINE_SLASH_DAMAGE; // 복마어주자 필중 참격: 마나와 무관하게 고정 30
+  blade.userData.damage = SHRINE_SLASH_DAMAGE; // 복마어주자 필중 참격: 마나와 무관하게 고정 15
   blade.position.copy(pos);
   blade.rotation.set(Math.random()*Math.PI*2, Math.random()*Math.PI*2, Math.random()*Math.PI*2);
   scene.add(blade);
+
+  if(owner==='local'){
+    // 내가(스쿠나) 만든 참격이니 상대 화면에도 같은 위치/크기로 보이도록 전송
+    sendNet({t:'shrine', pos:pos.toArray(), size});
+  }
 
   // 참격의 시각적 크기에 맞춘 판정 반경. 이 범위 안에 상대가 실제로 있어야만 데미지가 들어간다.
   const hitRadius = size * 0.55;
@@ -2079,8 +2225,8 @@ function spawnShrineSlash(centerPos){
       const p = life/duration;
       blade.material.opacity = 0.9*(1-p);
       blade.scale.setScalar(1 + p*0.8);
-      if(!hit && checkRemoteHit(pos, hitRadius, blade.userData.damage)){
-        hit = true; // 참격 하나당 판정은 1회만
+      if(owner==='local' && !hit && checkRemoteHit(pos, hitRadius, blade.userData.damage)){
+        hit = true; // 참격 하나당 판정은 1회만, 판정은 공격자(스쿠나) 클라이언트만 수행
       }
       if(life>duration){ scene.remove(blade); return true; }
       return false;
@@ -2198,13 +2344,20 @@ const SKILL_COOLDOWN = {
 }; // 초 단위
 const SKILL_MANA_COST = {1:20, 2:20, 3:50};   // 영역(4)은 초당 소모라 별도 처리
 const DOMAIN_DURATION = 10; // 영역 지속시간(초)
-const SHRINE_SLASH_DAMAGE = 30; // 복마어주자 참격 1회당 고정 데미지(마나와 무관, 필중)
+const SHRINE_SLASH_DAMAGE = 15; // 복마어주자 참격 1회당 고정 데미지(마나와 무관, 필중)
 
 let cooldowns = {
   gojo:   {1:0, 2:0, 3:0, 4:0},
   sukuna: {1:0, 2:0, 3:0, 4:0}
 };
 let domainTimer = { gojo:0, sukuna:0 }; // 영역이 열려있는 동안 남은 지속시간
+
+/* =========================================================
+   "속박" (자기 자신과의 계약) - 행동불가 속박과는 무관한 별개 강화 메커니즘
+   - 고죠: 오의(무라사키) 사용 전 아카/아오를 각각 1회 이상 사용했다면 다음 무라사키가 강화됨
+   - 스쿠나: 복마어주자(영역전개) 종료 후 재사용 대기시간 동안 오의(조)가 강화됨
+========================================================= */
+let gojoAkaUsed = false, gojoAoUsed = false;
 
 function useSkill(n){
   if(restrained){
@@ -2221,7 +2374,12 @@ function useSkill(n){
     return;
   }
 
-  const cost = SKILL_MANA_COST[n];
+  // 속박(자기 자신과의 계약) 판정 - 행동불가 속박과는 별개의 개념
+  const gojoEnhanced = (character==='gojo' && n===3 && gojoAkaUsed && gojoAoUsed); // 아카+아오를 각각 1회 이상 사용 후 무라사키
+  const sukunaEnhanced = (character==='sukuna' && n===3 && cooldowns.sukuna[4] > 0); // 영역전개 종료 후 재사용 대기시간 중
+
+  let cost = SKILL_MANA_COST[n];
+  if(gojoEnhanced) cost *= 2; // 강화된 무라사키는 마나 소모 2배
   if(mana < cost){
     flashSlotBlocked(n); // 마나 부족 -> 발동 불가
     return;
@@ -2230,8 +2388,15 @@ function useSkill(n){
   updateResourceUI();
 
   flashSlot(n);
-  cooldowns[character][n] = SKILL_COOLDOWN[character][n];
-  const damage = cost; // 기본 스킬 데미지는 소모 마나에 비례(1:1)
+  // 강화된 조는 쿨타임이 1.4배 감소(기존 쿨타임을 1.4로 나눠 더 빨리 재사용 가능)
+  cooldowns[character][n] = sukunaEnhanced
+    ? SKILL_COOLDOWN[character][n] / 1.4
+    : SKILL_COOLDOWN[character][n];
+
+  let damage = SKILL_MANA_COST[n]; // 기본 스킬 데미지는 소모 마나에 비례(1:1) - 강화 여부와 무관하게 기본 마나 기준으로 계산
+  if(gojoEnhanced) damage *= 1.5;  // 강화된 무라사키: 데미지 1.5배
+  if(sukunaEnhanced) damage *= 2;  // 강화된 조: 데미지 2배
+
   const fp = viewMode==='first';
 
   if(character==='gojo'){
@@ -2239,16 +2404,19 @@ function useSkill(n){
       spawnOrb(0xff3131, 0.3, true, false, damage, 'local');
       if(fp) triggerHandAnim('right','throw');
       sendNet({t:'k', n:1, o:getSkillOrigin(true).toArray(), d:getForwardVector().toArray()});
+      gojoAkaUsed = true; // 아카 사용 기록(무라사키 강화 조건)
     }
     else if(n===2){
       spawnOrb(0x2f7bff, 0.3, false, true, damage, 'local');
       if(fp) triggerHandAnim('left','throw');
       sendNet({t:'k', n:2, o:getSkillOrigin(false).toArray(), d:getForwardVector().toArray()});
+      gojoAoUsed = true; // 아오 사용 기록(무라사키 강화 조건)
     }
     else if(n===3){
-      spawnHollowPurple(damage, 'local');
+      spawnHollowPurple(damage, 'local', undefined, undefined, gojoEnhanced);
       if(fp){ triggerHandAnim('left','throw'); triggerHandAnim('right','throw'); }
-      sendNet({t:'k', n:3, o:getSkillOrigin(true).lerp(getSkillOrigin(false),0.5).toArray(), d:getForwardVector().toArray()});
+      sendNet({t:'k', n:3, o:getSkillOrigin(true).lerp(getSkillOrigin(false),0.5).toArray(), d:getForwardVector().toArray(), enhanced:gojoEnhanced});
+      if(gojoEnhanced){ gojoAkaUsed = false; gojoAoUsed = false; } // 강화 발동 후 초기화 -> 재강화하려면 아카/아오를 다시 사용해야 함
     }
   } else {
     if(n===1){ // 근접공격
@@ -2269,13 +2437,13 @@ function useSkill(n){
         // 시위를 놓는 타이밍(약 0.31초 후)에 맞춰 화살 발사
         setTimeout(()=>{
           if(character==='sukuna'){
-            spawnFireArrow(damage,'local');
-            sendNet({t:'k', n:3, o:getSkillOrigin(true).toArray(), d:getForwardVector().toArray()});
+            spawnFireArrow(damage,'local', undefined, undefined, sukunaEnhanced);
+            sendNet({t:'k', n:3, o:getSkillOrigin(true).toArray(), d:getForwardVector().toArray(), enhanced:sukunaEnhanced});
           }
         }, 310);
       } else {
-        spawnFireArrow(damage,'local');
-        sendNet({t:'k', n:3, o:getSkillOrigin(true).toArray(), d:getForwardVector().toArray()});
+        spawnFireArrow(damage,'local', undefined, undefined, sukunaEnhanced);
+        sendNet({t:'k', n:3, o:getSkillOrigin(true).toArray(), d:getForwardVector().toArray(), enhanced:sukunaEnhanced});
       }
     }
   }
@@ -2361,6 +2529,13 @@ function updateSkillUI(){
   const slot4 = document.getElementById('slot4');
   const domainActiveNow = character==='gojo' ? !!domainGojo : !!domainSukuna;
   slot4.classList.toggle('active', domainActiveNow);
+
+  // 속박(계약) 강화 상태 표시 - 오의(슬롯3) 키에 네온 빛 표시
+  const slot3 = document.getElementById('slot3');
+  const contractReady = character==='gojo'
+    ? (gojoAkaUsed && gojoAoUsed)      // 고죠: 다음 무라사키가 강화될 준비가 됨
+    : (cooldowns.sukuna[4] > 0);        // 스쿠나: 영역전개 재사용 대기시간 동안 조가 강화된 상태
+  slot3.classList.toggle('enhanced', contractReady);
 }
 
 /* --- 스쿠나 "팔": 참격 하나를 멀리 날려보내는 원거리 공격으로 리워크 --- */
@@ -2429,6 +2604,7 @@ function animate(){
     updateMovement(dt);
     updateCamera();
     updateDomains(dt);
+    updateDomainClash(dt);
     updateHandAnims(dt);
     updateCooldowns(dt);
     updateDomainDurations(dt);
