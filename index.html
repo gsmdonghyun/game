@@ -344,7 +344,7 @@
 <script type="module">
   // Trystero: 서버 없이 짧은 방 코드만으로 두 브라우저를 WebRTC로 자동 연결해주는 라이브러리.
   // 공개 Nostr 릴레이망을 시그널링 채널로 사용하므로 별도 가입/설정이 필요 없다.
-  window.__trysteroReady = import('https://esm.run/trystero')
+  window.__trysteroReady = import('https://esm.run/trystero@0.25.2')
     .then(mod => {
       window.__joinRoom = mod.joinRoom;
       return mod.joinRoom;
@@ -544,16 +544,20 @@ function makeRoomCode(){
 }
 
 function setupRoomActions(){
-  const [sendGame, getGame] = room.makeAction('game');
-  const [sendChar, getChar] = room.makeAction('char');
-  sendGameAction = sendGame;
-  sendCharAction = sendChar;
+  // Trystero 0.23+ 부터 makeAction()은 [send, get] 배열이 아니라
+  // {send, onMessage} 형태의 액션 객체를 반환한다.
+  const gameAction = room.makeAction('game');
+  const charAction = room.makeAction('char');
 
-  getGame((data)=>{ handleNetMessage(data); });
+  sendGameAction = (data, target)=> gameAction.send(data, target);
+  sendCharAction = (data, target)=> charAction.send(data, target);
+
+  gameAction.onMessage = (data)=>{ handleNetMessage(data); };
 
   // 캐릭터 정보 교환: 호스트가 먼저 자기 캐릭터를 보내면,
   // 게스트는 반대 캐릭터로 자동 배정된 뒤 자기 캐릭터를 답장으로 보낸다.
-  getChar((data, peerId)=>{
+  charAction.onMessage = (data, meta)=>{
+    const peerId = meta && meta.peerId;
     if(netConnected) return; // 중복 처리 방지
     if(netRole === 'guest'){
       remoteChar = data.character;
@@ -566,7 +570,7 @@ function setupRoomActions(){
       netConnected = true;
       startMultiplayerMatch();
     }
-  });
+  };
 
   room.onPeerLeave(()=>{
     netConnected = false;
