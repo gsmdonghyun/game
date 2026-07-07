@@ -2015,7 +2015,8 @@ function updateGojoDomainRestraint(){
   // 내가 고죠이고 내 무량공처가 열려있을 때, 상대(원격 플레이어)가 영역 안에 있으면 속박 메시지 전송
   if(character!=='gojo' || !domainGojo || !netConnected || !remotePlayer){
     if(remoteWasRestrained){
-      remoteWasRestrained = false; // 안전장치(영역이 닫히면 상태 리셋)
+      remoteWasRestrained = false; // 영역이 닫히면 상태 리셋
+      if(netConnected) sendNet({t:'r', on:false}); // 상대에게 속박 해제 메시지 전송(핵심 수정)
     }
     return;
   }
