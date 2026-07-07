@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>무량공처 :: 領域展開</title>
+<style>
+  html,body{margin:0;padding:0;overflow:hidden;background:#87ceeb;font-family:'Noto Sans KR','Malgun Gothic',sans-serif;}
+  canvas{display:block;}
+
+  #crosshair{
+    position:fixed;top:50%;left:50%;width:6px;height:6px;
+    margin:-3px 0 0 -3px;border-radius:50%;
+    background:rgba(255,255,255,0.85);
+    box-shadow:0 0 4px rgba(0,0,0,0.6);
+    pointer-events:none;z-index:20;
+  }
+
+  #hud{
+    position:fixed;top:18px;left:18px;z-index:20;color:#fff;
+    text-shadow:0 2px 6px rgba(0,0,0,.6);
+    pointer-events:none;user-select:none;
+  }
+  #charName{
+    font-size:28px;font-weight:900;letter-spacing:2px;
+    display:flex;align-items:center;gap:10px;
+  }
+  #charName .tag{
+    font-size:12px;font-weight:700;padding:3px 8px;border-radius:4px;
+    letter-spacing:1px;
+  }
+  .tag-gojo{background:rgba(70,120,255,.85);}
+  .tag-sukuna{background:rgba(220,40,30,.85);}
+  #domainStatus{
+    margin-top:6px;font-size:13px;font-weight:700;
+    padding:4px 10px;border-radius:5px;display:inline-block;
+    background:rgba(0,0,0,0.35);letter-spacing:1px;
+  }
+  #resourceBars{
+    margin-top:10px;display:flex;flex-direction:column;gap:5px;
+  }
+  .barRow{display:flex;align-items:center;gap:7px;}
+  .barLabel{width:24px;font-size:11px;font-weight:900;opacity:.9;}
+  .barTrack{
+    width:180px;height:13px;border-radius:7px;overflow:hidden;
+    background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.25);
+  }
+  .barFill{height:100%;width:100%;transition:width .15s linear;}
+  .hpFill{background:linear-gradient(90deg,#ff5b5b,#ff9a3d);}
+  .mpFill{background:linear-gradient(90deg,#3d8bff,#8b5bff);}
+  .barNum{font-size:11px;opacity:.85;min-width:58px;}
+  #skillBar{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    display:flex;gap:10px;z-index:20;
+  }
+  .skillSlot{
+    width:64px;height:64px;border-radius:10px;
+    background:rgba(10,10,20,0.55);
+    border:2px solid rgba(255,255,255,0.25);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    color:#fff;font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,.7);
+    transition:transform .08s, border-color .15s, box-shadow .15s;
+    position:relative;overflow:hidden;
+  }
+  .skillSlot .key{font-size:11px;opacity:.75;margin-bottom:2px;}
+  .skillSlot .name{font-size:12px;letter-spacing:0.5px;}
+  .skillSlot.flash{transform:scale(1.12);border-color:#fff;box-shadow:0 0 18px rgba(255,255,255,.8);}
+  .skillSlot.blocked{border-color:#ff4d4d;box-shadow:0 0 14px rgba(255,60,60,.7);}
+  .skillSlot.active{border-color:#fff;box-shadow:0 0 14px rgba(255,255,255,.6);}
+  .cdOverlay{
+    position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,0.72);
+    height:0%;transition:height .1s linear;pointer-events:none;
+  }
+  .cdText{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:20px;font-weight:900;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.8);
+    pointer-events:none;
+  }
+
+  #helpBox{
+    position:fixed;top:18px;right:18px;z-index:20;color:#fff;
+    background:rgba(0,0,0,0.35);padding:12px 16px;border-radius:8px;
+    font-size:12.5px;line-height:1.85;text-shadow:0 1px 4px rgba(0,0,0,.6);
+    max-width:230px;
+  }
+  #helpBox b{letter-spacing:1px;}
+
+  #startOverlay{
+    position:fixed;inset:0;z-index:50;
+    background:radial-gradient(circle at 50% 40%, #1b2a4a 0%, #05070d 75%);
+    display:flex;align-items:center;justify-content:center;flex-direction:column;
+    color:#fff;text-align:center;cursor:pointer;
+  }
+  #startOverlay h1{
+    font-size:44px;letter-spacing:6px;margin:0 0 8px;
+    background:linear-gradient(90deg,#5da8ff,#a06bff,#ff5a4d);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    font-weight:900;
+  }
+  #startOverlay p{opacity:.75;font-size:14px;letter-spacing:1px;margin:4px 0;}
+  #startOverlay .btn{
+    margin-top:26px;padding:12px 30px;border-radius:30px;
+    border:1px solid rgba(255,255,255,.4);font-size:14px;letter-spacing:2px;
+    background:rgba(255,255,255,.06);
+  }
+</style>
+</head>
+<body>
+
+<div id="startOverlay">
+  <h1>無量空處</h1>
+  <p>반경 35m 원형 결투장 &nbsp;·&nbsp; 고죠 사토루 &nbsp;/&nbsp; 료멘 스쿠나</p>
+  <p>WASD 이동 · Space 점프 · 마우스 시점 · V 시점전환(1인칭/3인칭) · Tab 캐릭터 변경 · Q E C X 술식</p>
+  <div class="btn">클릭하여 시작</div>
+</div>
+
+<div id="crosshair"></div>
+
+<div id="hud">
+  <div id="charName"><span id="charNameText">고죠 사토루</span><span class="tag tag-gojo" id="charTag">呪術師</span></div>
+  <div id="domainStatus" style="display:none;" id="domainStatus"></div>
+  <div id="resourceBars">
+    <div class="barRow">
+      <div class="barLabel">HP</div>
+      <div class="barTrack"><div class="barFill hpFill" id="hpFill"></div></div>
+      <div class="barNum" id="hpNum">100/100</div>
+    </div>
+    <div class="barRow">
+      <div class="barLabel">MP</div>
+      <div class="barTrack"><div class="barFill mpFill" id="mpFill"></div></div>
+      <div class="barNum" id="mpNum">300/300</div>
+    </div>
+  </div>
+</div>
+
+<div id="helpBox">
+  <b>조작</b><br>
+  V : 1인칭 / 3인칭 전환<br>
+  Tab : 캐릭터 전환<br><br>
+  <b>고죠 사토루</b><br>
+  Q : 아카 (赫) - 무한 척력 (MP20 · 쿨 3초)<br>
+  E : 아오 (蒼) - 무한 인력 (MP20 · 쿨 3초)<br>
+  C : 무라사키 (紫) - 오의 (MP50 · 쿨 5초)<br>
+  X : 무량공처 - 영역전개, 무피해·속박 (MP초당30 · 10초 지속/쿨 30초)<br><br>
+  <b>료멘 스쿠나 (Tab)</b><br>
+  Q : 해 (解) - 근접 참격 (MP20 · 쿨 1초)<br>
+  E : 팔 (捌) - 참격을 멀리 던짐 (MP20 · 쿨 3초)<br>
+  C : 조 (弔) - 화살(오의) (MP50 · 쿨 5초)<br>
+  X : 복마어주자 - 영역전개, 참격당 30 (MP초당30 · 10초 지속/쿨 30초)<br><br>
+  <b>HP / MP</b><br>
+  반전술식: HP 초당 5 · MP 초당 10 자동 회복<br>
+  (MP가 100 이하면 HP는 회복되지 않음)<br>
+  (최대 HP100 · MP300)
+</div>
+
+<div id="skillBar">
+  <div class="skillSlot" id="slot1"><div class="key">Q</div><div class="name">아카</div><div class="cdOverlay" id="cd1"></div><div class="cdText" id="cdText1"></div></div>
+  <div class="skillSlot" id="slot2"><div class="key">E</div><div class="name">아오</div><div class="cdOverlay" id="cd2"></div><div class="cdText" id="cdText2"></div></div>
+  <div class="skillSlot" id="slot3"><div class="key">C</div><div class="name">무라사키</div><div class="cdOverlay" id="cd3"></div><div class="cdText" id="cdText3"></div></div>
+  <div class="skillSlot" id="slot4"><div class="key">X</div><div class="name">무량공처</div><div class="cdOverlay" id="cd4"></div><div class="cdText" id="cdText4"></div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =========================================================
+   무량공처 :: SETUP
+========================================================= */
+let scene, camera, renderer, clock;
+let player, playerVel = new THREE.Vector3();
+let yaw = 0, pitch = -0.12;
+let onGround = true;
+let keys = {};
+let character = 'gojo'; // 'gojo' | 'sukuna'
+let viewMode = 'first'; // 'first' | 'third'
+let started = false;
+
+const GRAVITY = -28;
+const JUMP_SPEED = 10.5;
+const MOVE_SPEED = 9.5;
+const PLAYER_HEIGHT = 1.85;
+
+function init(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8fc7f0);
+  scene.fog = new THREE.Fog(0x8fc7f0, 45, 170);
+
+  camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 3000);
+  scene.add(camera); // 카메라를 scene에 등록해야, 카메라 자식(1인칭 손 뷰모델)이 렌더링 순회에 포함됨
+
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  clock = new THREE.Clock();
+
+  buildSky();
+  buildGround();
+  buildClouds();
+  buildPlayer();
+  buildFirstPersonHands();
+  setViewMode(viewMode);
+  // 투사체는 필요 시 즉석 생성 방식 (별도 풀 불필요)
+
+  window.addEventListener('resize', onResize);
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', e=> keys[e.code]=false);
+  document.addEventListener('mousemove', onMouseMove);
+
+  document.getElementById('startOverlay').addEventListener('click', ()=>{
+    document.getElementById('startOverlay').style.display='none';
+    document.body.requestPointerLock();
+    started = true;
+  });
+
+  document.addEventListener('pointerlockchange', ()=>{
+    if(document.pointerLockElement !== document.body && started){
+      // show overlay again lightly (optional) - keep game running w/o mouse look
+    }
+  });
+}
+
+function onResize(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* =========================================================
+   환경: 하늘, 잔디, 구름
+========================================================= */
+function buildSky(){
+  const sun = new THREE.DirectionalLight(0xfff3d6, 1.15);
+  sun.position.set(150, 220, 80);
+  sun.castShadow = true;
+  sun.shadow.camera.left=-300; sun.shadow.camera.right=300;
+  sun.shadow.camera.top=300; sun.shadow.camera.bottom=-300;
+  sun.shadow.camera.far = 700;
+  sun.shadow.mapSize.set(2048,2048);
+  scene.add(sun);
+
+  const hemi = new THREE.HemisphereLight(0xbfe3ff, 0x4c7a3a, 0.65);
+  scene.add(hemi);
+
+  const amb = new THREE.AmbientLight(0xffffff, 0.25);
+  scene.add(amb);
+}
+
+function grassTexture(repeatCount){
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#5fa347';
+  ctx.fillRect(0,0,256,256);
+  for(let i=0;i<3000;i++){
+    const x = Math.random()*256, y = Math.random()*256;
+    const shade = Math.random();
+    ctx.fillStyle = shade<0.5 ? 'rgba(70,150,60,0.5)' : 'rgba(110,190,90,0.35)';
+    ctx.fillRect(x,y, 2, 6);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatCount, repeatCount);
+  tex.anisotropy = 8;
+  return tex;
+}
+
+const ARENA_RADIUS = 35; // 반경 35m 결투장
+
+function buildGround(){
+  // 원형 결투장 잔디 바닥
+  const geo = new THREE.CircleGeometry(ARENA_RADIUS, 96);
+  const mat = new THREE.MeshStandardMaterial({map:grassTexture(13), roughness:1});
+  const ground = new THREE.Mesh(geo, mat);
+  ground.rotation.x = -Math.PI/2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // 경계석 링(결투장 테두리) - 살짝 솟은 돌 경계
+  const ringGeo = new THREE.TorusGeometry(ARENA_RADIUS, 0.9, 12, 96);
+  const ringMat = new THREE.MeshStandardMaterial({color:0x8a8378, roughness:0.9});
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI/2;
+  ring.position.y = 0.15;
+  ring.receiveShadow = true;
+  ring.castShadow = true;
+  scene.add(ring);
+
+  // 안쪽으로 한 겹 더 - 결투장 라인을 또렷하게
+  const lineGeo = new THREE.RingGeometry(ARENA_RADIUS-1.2, ARENA_RADIUS-0.6, 96);
+  const lineMat = new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.55, side:THREE.DoubleSide});
+  const line = new THREE.Mesh(lineGeo, lineMat);
+  line.rotation.x = -Math.PI/2;
+  line.position.y = 0.03;
+  scene.add(line);
+}
+
+function buildClouds(){
+  const cloudMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:1, transparent:true, opacity:0.9});
+  window.clouds = [];
+  for(let i=0;i<7;i++){
+    const group = new THREE.Group();
+    const puffs = 4 + Math.floor(Math.random()*3);
+    for(let j=0;j<puffs;j++){
+      const s = 6 + Math.random()*6;
+      const geo = new THREE.SphereGeometry(s, 8, 8);
+      const m = new THREE.Mesh(geo, cloudMat);
+      m.position.set((Math.random()-0.5)*18, Math.random()*3, (Math.random()-0.5)*10);
+      m.scale.y = 0.55;
+      group.add(m);
+    }
+    group.position.set((Math.random()-0.5)*1000, 110+Math.random()*40, (Math.random()-0.5)*1000);
+    scene.add(group);
+    window.clouds.push(group);
+  }
+}
+
+/* =========================================================
+   플레이어 모델 (고죠 / 스쿠나 겸용, 외형만 교체)
+========================================================= */
+let bodyParts = {};
+
+function buildPlayer(){
+  player = new THREE.Group();
+  player.position.set(0, 0, 0);
+  scene.add(player);
+
+  const torsoMat = new THREE.MeshStandardMaterial({color:0x14151c});
+  const skinMat = new THREE.MeshStandardMaterial({color:0xe8c39e});
+  const hairMat = new THREE.MeshStandardMaterial({color:0xffffff});
+  const blindMat = new THREE.MeshStandardMaterial({color:0x111111});
+
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.32,1.0,10), torsoMat);
+  torso.position.y = 1.15;
+  torso.castShadow = true;
+  player.add(torso);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32,16,16), skinMat);
+  head.position.y = 1.85;
+  head.castShadow = true;
+  player.add(head);
+
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.335,16,16, 0, Math.PI*2, 0, Math.PI*0.62), hairMat);
+  hair.position.y = 1.9;
+  player.add(hair);
+
+  const blind = new THREE.Mesh(new THREE.BoxGeometry(0.36,0.09,0.34), blindMat);
+  blind.position.set(0,1.88,0);
+  player.add(blind);
+
+  const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.13,0.9,8), torsoMat);
+  legL.position.set(-0.18,0.45,0); legL.castShadow=true; player.add(legL);
+  const legR = legL.clone(); legR.position.x = 0.18; player.add(legR);
+
+  const armGeo = new THREE.CylinderGeometry(0.13,0.11,0.75,8);
+  const armL = new THREE.Mesh(armGeo, torsoMat);
+  armL.position.set(-0.56,1.28,0); armL.castShadow = true; player.add(armL);
+  const armR = new THREE.Mesh(armGeo, torsoMat);
+  armR.position.set(0.56,1.28,0); armR.castShadow = true; player.add(armR);
+
+  const handL = new THREE.Object3D(); handL.position.set(0,-0.42,0); armL.add(handL);
+  const handR = new THREE.Object3D(); handR.position.set(0,-0.42,0); armR.add(handR);
+
+  bodyParts = {torso, head, hair, blind, legL, legR, armL, armR, handL, handR};
+
+  applyCharacterAppearance();
+}
+
+function applyCharacterAppearance(){
+  if(character==='gojo'){
+    bodyParts.torso.material.color.set(0x14151c);
+    bodyParts.legL.material.color.set(0x14151c);
+    bodyParts.legR.material.color.set(0x14151c);
+    bodyParts.armL.material.color.set(0x14151c);
+    bodyParts.armR.material.color.set(0x14151c);
+    bodyParts.hair.visible = true;
+    bodyParts.hair.material.color.set(0xffffff);
+    bodyParts.blind.visible = true;
+    bodyParts.head.material.color.set(0xe8c39e);
+    document.getElementById('charNameText').textContent = '고죠 사토루';
+    document.getElementById('charTag').textContent = '呪術師';
+    document.getElementById('charTag').className = 'tag tag-gojo';
+    setSkillLabels(['아카','아오','무라사키','무량공처']);
+    if(fpHands.right){
+      fpHands.right.sleeve.material.color.set(0x14151c);
+      fpHands.left.sleeve.material.color.set(0x14151c);
+      fpHands.right.palm.material.color.set(0xe8c39e);
+      fpHands.left.palm.material.color.set(0xe8c39e);
+      fpHands.right.knuckle.material.color.set(0xe8c39e);
+      fpHands.left.knuckle.material.color.set(0xe8c39e);
+    }
+  } else {
+    bodyParts.torso.material.color.set(0x3a0d0d);
+    bodyParts.legL.material.color.set(0x1a1a1a);
+    bodyParts.legR.material.color.set(0x1a1a1a);
+    bodyParts.armL.material.color.set(0xb5502e);
+    bodyParts.armR.material.color.set(0xb5502e);
+    bodyParts.hair.visible = true;
+    bodyParts.hair.material.color.set(0x0a0a0a);
+    bodyParts.blind.visible = false;
+    bodyParts.head.material.color.set(0xc98a5c);
+    document.getElementById('charNameText').textContent = '료멘 스쿠나';
+    document.getElementById('charTag').textContent = '呪詛師';
+    document.getElementById('charTag').className = 'tag tag-sukuna';
+    setSkillLabels(['해','팔','조','복마어주자']);
+    if(fpHands.right){
+      fpHands.right.sleeve.material.color.set(0xb5502e);
+      fpHands.left.sleeve.material.color.set(0xb5502e);
+      fpHands.right.palm.material.color.set(0xc98a5c);
+      fpHands.left.palm.material.color.set(0xc98a5c);
+      fpHands.right.knuckle.material.color.set(0xc98a5c);
+      fpHands.left.knuckle.material.color.set(0xc98a5c);
+    }
+  }
+}
+
+function setSkillLabels(names){
+  for(let i=0;i<4;i++){
+    document.querySelector('#slot'+(i+1)+' .name').textContent = names[i];
+  }
+}
+
+/* =========================================================
+   1인칭 손 (뷰모델) - 카메라에 직접 부착되어 항상 화면에 보임
+========================================================= */
+let fpHands = {};
+const FP_REST = {
+  right: {pos:[0.34,-0.40,-0.52], rot:[0,0,-0.22]},
+  left:  {pos:[-0.34,-0.40,-0.52], rot:[0,0,0.22]}
+};
+
+function buildFirstPersonHands(){
+  const group = new THREE.Group();
+  camera.add(group);
+  fpHands.group = group;
+
+  const handLight = new THREE.PointLight(0xffffff, 0.9, 4);
+  handLight.position.set(0, 0.2, 0.3);
+  group.add(handLight);
+
+  function makeHand(side){
+    const rest = FP_REST[side];
+    const g = new THREE.Group();
+    const sleeve = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.085,0.07,0.46,10),
+      new THREE.MeshStandardMaterial({color:0x14151c})
+    );
+    sleeve.position.y = -0.08;
+    g.add(sleeve);
+    const palm = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09,12,12),
+      new THREE.MeshStandardMaterial({color:0xe8c39e})
+    );
+    palm.position.y = 0.19;
+    g.add(palm);
+    const knuckle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.13,0.07,0.1),
+      new THREE.MeshStandardMaterial({color:0xe8c39e})
+    );
+    knuckle.position.y = 0.24;
+    g.add(knuckle);
+    g.position.set(...rest.pos);
+    g.rotation.set(...rest.rot);
+    group.add(g);
+    return {group:g, sleeve, palm, knuckle};
+  }
+
+  fpHands.right = makeHand('right');
+  fpHands.left = makeHand('left');
+}
+
+function resetHandPose(side){
+  const rest = FP_REST[side];
+  fpHands[side].group.position.set(...rest.pos);
+  fpHands[side].group.rotation.set(...rest.rot);
+}
+
+/* 스킬 사용 시 손 애니메이션 트리거 */
+let handAnim = {left:null, right:null};
+
+function triggerHandAnim(side, style){
+  const duration = style==='slash' ? 0.22 : (style==='raise' ? 0.4 : (style==='gather' ? 0.5 : 0.28));
+  handAnim[side] = {t:0, duration, style};
+}
+
+// 료멘 스쿠나 "조": 왼손으로 활을 쥐고, 오른손으로 시위를 당겼다가 놓는 동작
+function triggerBowAnim(){
+  const duration = 0.5;
+  handAnim.left  = {t:0, duration, style:'bowHold'};
+  handAnim.right = {t:0, duration, style:'bowDraw'};
+}
+
+function updateHandAnims(dt){
+  const idleT = clock.getElapsedTime();
+  ['left','right'].forEach(side=>{
+    const state = handAnim[side];
+    const hand = fpHands[side];
+    const rest = FP_REST[side];
+
+    if(!state){
+      // 스킬을 쓰지 않을 때도 손이 살아있도록: 걷는 중엔 흔들림, 가만히 있으면 숨쉬듯 미세하게 움직임
+      const sideMul = side==='right' ? 1 : -1;
+      if(isMoving){
+        const bobY = Math.sin(walkCycle*2) * 0.018;
+        const bobX = Math.cos(walkCycle) * 0.012;
+        const bobRotZ = Math.sin(walkCycle*2) * 0.05;
+        hand.group.position.set(rest.pos[0]+bobX*sideMul, rest.pos[1]+bobY, rest.pos[2]);
+        hand.group.rotation.set(bobY*1.5, 0, rest.rot[2]+bobRotZ*sideMul);
+      } else {
+        const breathe = Math.sin(idleT*1.3 + (side==='right'?0:Math.PI*0.3)) * 0.012;
+        hand.group.position.set(rest.pos[0], rest.pos[1]+breathe, rest.pos[2]);
+        hand.group.rotation.set(breathe*0.6, 0, rest.rot[2]);
+      }
+      return;
+    }
+
+    state.t += dt;
+    const p = Math.min(state.t/state.duration, 1);
+    const swing = Math.sin(p*Math.PI); // 0 -> 1 -> 0
+    const dir = side==='right' ? -1 : 1;
+
+    if(state.style==='throw'){
+      hand.group.position.set(rest.pos[0], rest.pos[1]+swing*0.06, rest.pos[2]-swing*0.38);
+      hand.group.rotation.set(-swing*1.0, 0, rest.rot[2]);
+    } else if(state.style==='slash'){
+      hand.group.position.set(rest.pos[0]+swing*0.18*dir, rest.pos[1]+swing*0.05, rest.pos[2]-swing*0.22);
+      hand.group.rotation.set(0,0, rest.rot[2] + swing*2.0*dir*-1);
+    } else if(state.style==='raise'){
+      hand.group.position.set(rest.pos[0]*0.5, rest.pos[1]+swing*0.34, rest.pos[2]+swing*0.18);
+      hand.group.rotation.set(-swing*0.6, 0, rest.rot[2]*0.3);
+    } else if(state.style==='gather'){
+      // 료멘 스쿠나: 양손을 중앙으로 모아 영역을 펼침
+      hand.group.position.set(
+        rest.pos[0]*(1-swing*0.9),
+        rest.pos[1]+swing*0.16,
+        rest.pos[2]-swing*0.22
+      );
+      hand.group.rotation.set(-swing*0.35, dir*swing*0.5, rest.rot[2]*(1-swing));
+    } else if(state.style==='bowHold'){
+      // 활을 쥔 왼손: 앞으로 뻗어 자세를 잡고 그대로 유지
+      const extend = Math.min(p/0.28, 1);
+      hand.group.position.set(rest.pos[0]-0.06, rest.pos[1]+0.10, rest.pos[2]-extend*0.30);
+      hand.group.rotation.set(-0.12, -0.15, rest.rot[2]-0.15);
+    } else if(state.style==='bowDraw'){
+      // 오른손: 화살을 쥐고 뒤로(몸 쪽/뺨 쪽으로) 당겼다가, 놓는 순간 앞으로 스냅
+      let pull;
+      if(p < 0.62){
+        const t = p/0.62;
+        pull = t*t*(3-2*t); // 0 -> 1 부드럽게 당김
+      } else {
+        const t = (p-0.62)/0.38;
+        pull = 1 - t*t; // 1 -> 0 빠르게 놓음(발사)
+      }
+      hand.group.position.set(
+        rest.pos[0]+pull*0.03,
+        rest.pos[1]+pull*0.14,
+        rest.pos[2]+pull*0.30   // +Z: 카메라 쪽(몸 쪽)으로 당겨오는 방향
+      );
+      hand.group.rotation.set(pull*0.35, pull*0.2, rest.rot[2]-pull*0.5);
+    }
+
+    if(p>=1){
+      handAnim[side] = null;
+      resetHandPose(side);
+    }
+  });
+}
+
+/* =========================================================
+   입력
+========================================================= */
+function onKeyDown(e){
+  if(!started) return;
+  if(e.repeat) return; // 키를 계속 누르고 있어도 반복 발동되지 않도록
+  keys[e.code] = true;
+
+  if(e.code === 'Tab'){
+    e.preventDefault();
+    character = character==='gojo' ? 'sukuna' : 'gojo';
+    applyCharacterAppearance();
+    applyViewVisibility(viewMode); // 시점에 맞춰 모델 표시 상태 재적용
+  }
+  if(e.code === 'KeyV'){
+    setViewMode(viewMode==='first' ? 'third' : 'first');
+  }
+  if(e.code === 'Space'){
+    e.preventDefault();
+    if(onGround){
+      playerVel.y = JUMP_SPEED;
+      onGround = false;
+    }
+  }
+  if(e.code === 'KeyQ') useSkill(1);
+  if(e.code === 'KeyE') useSkill(2);
+  if(e.code === 'KeyC') useSkill(3);
+  if(e.code === 'KeyX') useSkill(4);
+}
+
+function onMouseMove(e){
+  if(document.pointerLockElement !== document.body) return;
+  yaw -= e.movementX * 0.0022;
+  pitch -= e.movementY * 0.0022;
+  pitch = Math.max(-1.35, Math.min(1.3, pitch));
+}
+
+/* =========================================================
+   이동 / 카메라
+========================================================= */
+function getHorizontalForward(){
+  return new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+}
+function getHorizontalRight(){
+  // 카메라 lookAt 기준 실제 화면상의 '오른쪽'과 일치하도록 -PI/2 사용 (기존 +PI/2는 좌우가 반대였음)
+  return new THREE.Vector3(Math.sin(yaw-Math.PI/2),0,Math.cos(yaw-Math.PI/2));
+}
+
+function updateMovement(dt){
+  const forward = getHorizontalForward();
+  const right = getHorizontalRight();
+
+  let move = new THREE.Vector3();
+  if(keys['KeyW']) move.add(forward);
+  if(keys['KeyS']) move.sub(forward);
+  if(keys['KeyD']) move.add(right);
+  if(keys['KeyA']) move.sub(right);
+
+  if(move.lengthSq()>0){
+    move.normalize();
+    isMoving = true;
+    player.position.x += move.x * MOVE_SPEED * dt;
+    player.position.z += move.z * MOVE_SPEED * dt;
+    const targetRot = Math.atan2(move.x, move.z);
+    let diff = targetRot - player.rotation.y;
+    while(diff>Math.PI) diff-=Math.PI*2;
+    while(diff<-Math.PI) diff+=Math.PI*2;
+    player.rotation.y += diff * Math.min(1, dt*10);
+    walkCycle += dt*9;
+  } else {
+    isMoving = false;
+    walkCycle *= 0.9;
+  }
+
+  playerVel.y += GRAVITY*dt;
+  player.position.y += playerVel.y*dt;
+  if(player.position.y <= 0){
+    player.position.y = 0;
+    playerVel.y = 0;
+    onGround = true;
+  }
+
+  // 결투장 경계 밖으로 나가지 않도록 제한
+  const distFromCenter = Math.hypot(player.position.x, player.position.z);
+  const maxDist = ARENA_RADIUS - 1.6;
+  if(distFromCenter > maxDist){
+    const scale = maxDist / distFromCenter;
+    player.position.x *= scale;
+    player.position.z *= scale;
+  }
+
+  // simple walk bob
+  bodyParts.legL.rotation.x = Math.sin(walkCycle)*0.55;
+  bodyParts.legR.rotation.x = -Math.sin(walkCycle)*0.55;
+  bodyParts.armL.rotation.x = -Math.sin(walkCycle)*0.4;
+  bodyParts.armR.rotation.x = Math.sin(walkCycle)*0.4;
+}
+let walkCycle = 0;
+let isMoving = false;
+
+function updateCamera(){
+  if(viewMode==='first'){
+    updateCameraFirstPerson();
+  } else {
+    updateCameraThirdPerson();
+  }
+}
+
+function updateCameraThirdPerson(){
+  const dist = 4.6, height = 1.7;
+  const camOffset = new THREE.Vector3(
+    -Math.sin(yaw)*dist*Math.cos(pitch*0.4),
+    height + Math.sin(-pitch)*dist*0.9,
+    -Math.cos(yaw)*dist*Math.cos(pitch*0.4)
+  );
+  const desired = player.position.clone().add(new THREE.Vector3(0,1.2,0)).add(camOffset);
+  camera.position.lerp(desired, 0.22);
+
+  const lookTarget = player.position.clone().add(new THREE.Vector3(0,1.4,0));
+  camera.lookAt(lookTarget);
+}
+
+function updateCameraFirstPerson(){
+  // 눈 높이(대략 머리 위치)에서 시작
+  const eye = player.position.clone().add(new THREE.Vector3(0, 1.82, 0));
+  camera.position.copy(eye);
+
+  const dir = new THREE.Vector3(
+    Math.sin(yaw)*Math.cos(pitch),
+    Math.sin(pitch),
+    Math.cos(yaw)*Math.cos(pitch)
+  );
+  camera.lookAt(eye.clone().add(dir));
+
+  // 몸이 카메라를 정확히 바라보도록(참격/구슬 발사 방향과 일치)
+  player.rotation.y = yaw;
+}
+
+function applyViewVisibility(mode){
+  const isFirst = mode==='first';
+  bodyParts.torso.visible = !isFirst;
+  bodyParts.head.visible = !isFirst;
+  bodyParts.hair.visible = !isFirst;
+  bodyParts.blind.visible = !isFirst && character==='gojo';
+  bodyParts.legL.visible = !isFirst;
+  bodyParts.legR.visible = !isFirst;
+  bodyParts.armL.visible = !isFirst;
+  bodyParts.armR.visible = !isFirst;
+  if(fpHands.group) fpHands.group.visible = isFirst;
+}
+
+function setViewMode(mode){
+  viewMode = mode;
+  applyViewVisibility(mode);
+
+  camera.fov = mode==='first' ? 74 : 62;
+  camera.updateProjectionMatrix();
+
+  const label = mode==='first' ? '1인칭 시점' : '3인칭 시점';
+  showViewToast(label);
+}
+
+function showViewToast(text){
+  let el = document.getElementById('viewToast');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'viewToast';
+    el.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);'
+      +'background:rgba(0,0,0,0.55);color:#fff;padding:6px 16px;border-radius:20px;'
+      +'font-size:13px;letter-spacing:1px;z-index:25;transition:opacity .3s;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(()=>{ el.style.opacity='0'; }, 1000);
+}
+
+/* =========================================================
+   이펙트 유틸
+========================================================= */
+function flashSlot(n){
+  const el = document.getElementById('slot'+n);
+  el.classList.add('flash');
+  setTimeout(()=>el.classList.remove('flash'), 260);
+}
+
+function flashSlotBlocked(n){
+  const el = document.getElementById('slot'+n);
+  el.classList.add('blocked');
+  setTimeout(()=>el.classList.remove('blocked'), 200);
+}
+
+function getHandWorldPos(right){
+  const hand = right ? bodyParts.handR : bodyParts.handL;
+  const v = new THREE.Vector3();
+  hand.getWorldPosition(v);
+  return v;
+}
+
+// 1인칭일 때는 화면에 보이는 손(뷰모델)의 실제 위치에서 발사되도록
+function getSkillOrigin(right){
+  if(viewMode==='first' && fpHands.right){
+    const v = new THREE.Vector3();
+    (right ? fpHands.right.group : fpHands.left.group).getWorldPosition(v);
+    return v;
+  }
+  return getHandWorldPos(right);
+}
+
+// 조준 방향: yaw(좌우) + pitch(상하) 모두 반영 -> 바라보는 방향 그대로 발사됨
+function getForwardVector(){
+  return new THREE.Vector3(
+    Math.sin(yaw)*Math.cos(pitch),
+    Math.sin(pitch),
+    Math.cos(yaw)*Math.cos(pitch)
+  ).normalize();
+}
+
+/* --- 파티클/투사체 풀 --- */
+let activeObjects = [];
+
+function spawnOrb(color, size, fromRight, pull, damage){
+  const geo = new THREE.SphereGeometry(size,16,16);
+  const mat = new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:1.6, transparent:true, opacity:0.95});
+  const orb = new THREE.Mesh(geo, mat);
+  orb.userData.damage = damage || 0; // 추후 충돌/적 시스템에서 사용
+  const start = getSkillOrigin(fromRight);
+  orb.position.copy(start);
+  scene.add(orb);
+
+  const light = new THREE.PointLight(color, 3, 12);
+  orb.add(light);
+
+  const dir = getForwardVector();
+  const baseSpeed = 26;
+  let speed = baseSpeed;
+  const startPos = start.clone();
+  let traveled = 0;
+  let life = 0;
+
+  const trailParticles = [];
+
+  const obj = {
+    mesh: orb,
+    update(dt){
+      life += dt;
+
+      // 아카(척력, pull=false): 날아간 거리에 비례해 점점 더 빨라짐
+      if(!pull){
+        speed = baseSpeed + traveled*2.2;
+      }
+
+      orb.position.addScaledVector(dir, speed*dt);
+      traveled = orb.position.distanceTo(startPos);
+
+      // 아오(인력, pull=true): 날아간 거리에 비례해 커짐 (아카의 가속감에 맞춰 더 눈에 띄게)
+      if(pull){
+        orb.scale.setScalar(1 + traveled*0.09);
+      }
+
+      orb.rotation.y += dt*10;
+
+      // trail particles: aka pushes outward, ao pulls inward
+      if(Math.random()<0.6){
+        const p = new THREE.Mesh(new THREE.SphereGeometry(size*0.18,6,6), new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.8}));
+        const jitter = new THREE.Vector3((Math.random()-0.5),(Math.random()-0.5),(Math.random()-0.5));
+        if(pull){
+          p.position.copy(orb.position).addScaledVector(jitter, 1.4);
+        } else {
+          p.position.copy(orb.position).addScaledVector(jitter, 0.15);
+        }
+        scene.add(p);
+        trailParticles.push({mesh:p, target: pull ? orb.position.clone() : null, born:0, pull});
+      }
+      for(let i=trailParticles.length-1;i>=0;i--){
+        const tp = trailParticles[i];
+        tp.born += dt;
+        if(tp.pull){
+          tp.mesh.position.lerp(orb.position, dt*4);
+        } else {
+          tp.mesh.position.addScaledVector(dir.clone().negate().add(new THREE.Vector3((Math.random()-0.5)*0.3,(Math.random()-0.5)*0.3,(Math.random()-0.5)*0.3)), dt*3);
+        }
+        tp.mesh.material.opacity -= dt*1.1;
+        tp.mesh.scale.multiplyScalar(0.96);
+        if(tp.mesh.material.opacity<=0){
+          scene.remove(tp.mesh);
+          trailParticles.splice(i,1);
+        }
+      }
+
+      if(life>2.6){
+        scene.remove(orb);
+        trailParticles.forEach(tp=>scene.remove(tp.mesh));
+        return true; // done
+      }
+      return false;
+    }
+  };
+  activeObjects.push(obj);
+}
+
+function spawnHollowPurple(damage){
+  const geo = new THREE.SphereGeometry(0.42,20,20);
+  const mat = new THREE.MeshStandardMaterial({color:0x9b30ff, emissive:0x9b30ff, emissiveIntensity:2.2, transparent:true, opacity:0.92});
+  const orb = new THREE.Mesh(geo, mat);
+  orb.userData.damage = damage || 0;
+  const start = getSkillOrigin(true).lerp(getSkillOrigin(false),0.5);
+  orb.position.copy(start);
+  scene.add(orb);
+  const light = new THREE.PointLight(0x9b30ff, 6, 20);
+  orb.add(light);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62,0.05,8,24), new THREE.MeshBasicMaterial({color:0xcf8bff, transparent:true, opacity:0.8}));
+  orb.add(ring);
+
+  const dir = getForwardVector();
+  const baseSpeed = 34;
+  let speed = baseSpeed;
+  const startPos = start.clone();
+  let traveled = 0;
+  let life = 0;
+  let shook = false;
+
+  const obj = {
+    update(dt){
+      life += dt;
+
+      // 아카+아오 결합: 날아간 거리에 비례해 더 빠르고, 더 커지며 날아감
+      speed = baseSpeed + traveled*3.0;
+      orb.position.addScaledVector(dir, speed*dt);
+      traveled = orb.position.distanceTo(startPos);
+
+      const growth = 1 + traveled*0.11;
+      const pulse = Math.sin(life*40)*0.03;
+      orb.scale.setScalar(growth + pulse);
+
+      orb.rotation.y += dt*14;
+      ring.rotation.x += dt*6;
+      if(life>0.55 && !shook){ shook = true; camShake(0.35, 0.5); }
+      if(life>2.2){
+        scene.remove(orb);
+        return true;
+      }
+      return false;
+    }
+  };
+  activeObjects.push(obj);
+}
+
+/* --- 눈에 보이는 참격(칼날 궤적) 이펙트 --- */
+function makeSlashGeometry(innerR, outerR, spanAngle){
+  const shape = new THREE.Shape();
+  const segments = 14;
+  const start = -spanAngle/2, end = spanAngle/2;
+  for(let i=0;i<=segments;i++){
+    const a = start + (end-start)*i/segments;
+    const x = Math.cos(a)*outerR, y = Math.sin(a)*outerR;
+    if(i===0) shape.moveTo(x,y); else shape.lineTo(x,y);
+  }
+  for(let i=segments;i>=0;i--){
+    const a = start + (end-start)*i/segments;
+    const x = Math.cos(a)*innerR, y = Math.sin(a)*innerR;
+    shape.lineTo(x,y);
+  }
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape, 8);
+}
+
+function createSlashBlade(color, size){
+  const geo = makeSlashGeometry(size*0.45, size, 1.9);
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent:true, opacity:0.95, side:THREE.DoubleSide,
+    blending:THREE.AdditiveBlending, depthWrite:false
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function spawnSlash(diag, big, damage){
+  const color = big ? 0xff5030 : 0xfff2df;
+  const size = big ? 1.5 : 1.05;
+
+  const billboard = new THREE.Group();
+  billboard.userData.damage = damage || 0;
+  const blade = createSlashBlade(color, size);
+  blade.rotation.z = (diag ? Math.PI/4 : 0) + (Math.random()-0.5)*0.5;
+  billboard.add(blade);
+
+  const origin = player.position.clone().add(new THREE.Vector3(0,1.4,0)).addScaledVector(getForwardVector(), 1.3);
+  billboard.position.copy(origin);
+  billboard.quaternion.copy(camera.quaternion);
+  scene.add(billboard);
+
+  const light = new THREE.PointLight(color, big?3.2:2.2, 7);
+  billboard.add(light);
+
+  let life = 0;
+  const duration = 0.3;
+  const obj = {
+    update(dt){
+      life += dt;
+      billboard.quaternion.copy(camera.quaternion); // 계속 카메라를 향하도록(가독성)
+      const p = life/duration;
+      blade.material.opacity = 0.95*(1-p);
+      billboard.scale.setScalar(1 + p*1.3);
+      if(life>duration){ scene.remove(billboard); return true; }
+      return false;
+    }
+  };
+  activeObjects.push(obj);
+}
+
+/* --- 불꽃 스프라이트(항상 카메라를 향함) --- */
+function makeFlameSprite(){
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(32,32,0,32,32,32);
+  grad.addColorStop(0,'rgba(255,244,200,1)');
+  grad.addColorStop(0.35,'rgba(255,150,40,0.95)');
+  grad.addColorStop(0.7,'rgba(255,60,20,0.45)');
+  grad.addColorStop(1,'rgba(255,30,10,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,64,64);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({map:tex, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false});
+  return new THREE.Sprite(mat);
+}
+
+function spawnEmberParticle(pos){
+  const s = 0.12 + Math.random()*0.1;
+  const spr = makeFlameSprite();
+  spr.scale.set(s,s,s);
+  spr.position.copy(pos).add(new THREE.Vector3((Math.random()-0.5)*0.12,(Math.random()-0.5)*0.12,(Math.random()-0.5)*0.12));
+  scene.add(spr);
+  let life = 0;
+  activeObjects.push({
+    update(dt){
+      life += dt;
+      spr.material.opacity = Math.max(0, 1-life/0.45);
+      spr.scale.multiplyScalar(0.95);
+      spr.position.y += dt*0.25;
+      if(life>0.45){ scene.remove(spr); return true; }
+      return false;
+    }
+  });
+}
+
+/* --- 조: 완전한 형태의 불꽃 화살 (화살대+화살촉+깃+화염) --- */
+function spawnFireArrow(damage){
+  const group = new THREE.Group();
+  group.userData.damage = damage || 0;
+
+  // 화살대
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.022,0.028,1.05,8),
+    new THREE.MeshStandardMaterial({color:0x3b2415, roughness:0.85})
+  );
+  shaft.rotation.x = Math.PI/2;
+  group.add(shaft);
+
+  // 화살촉 (불에 달궈진 금속)
+  const head = new THREE.Mesh(
+    new THREE.ConeGeometry(0.075,0.34,10),
+    new THREE.MeshStandardMaterial({color:0xffb347, emissive:0xff4500, emissiveIntensity:2.4, metalness:0.4, roughness:0.35})
+  );
+  head.rotation.x = -Math.PI/2;
+  head.position.z = 0.68;
+  group.add(head);
+
+  // 깃(페더) 3장
+  const featherMat = new THREE.MeshBasicMaterial({color:0x8a1f10, side:THREE.DoubleSide, transparent:true, opacity:0.9});
+  for(let i=0;i<3;i++){
+    const feather = new THREE.Mesh(new THREE.PlaneGeometry(0.05,0.24), featherMat);
+    const a = i*(Math.PI*2/3);
+    feather.position.set(Math.cos(a)*0.02, Math.sin(a)*0.02, -0.48);
+    feather.rotation.z = a;
+    feather.rotation.y = Math.PI/2;
+    group.add(feather);
+  }
+
+  // 화염 코어(항상 카메라를 향하는 글로우)
+  const flame = makeFlameSprite();
+  flame.scale.set(0.55,0.55,0.55);
+  flame.position.z = 0.32;
+  group.add(flame);
+
+  const light = new THREE.PointLight(0xff5522, 5.5, 14);
+  light.position.z = 0.4;
+  group.add(light);
+
+  const start = getSkillOrigin(true);
+  group.position.copy(start);
+  const dir = getForwardVector();
+  group.lookAt(start.clone().add(dir));
+  scene.add(group);
+
+  let life = 0;
+  const speed = 46;
+  let flicker = 0;
+  const obj = {
+    update(dt){
+      life += dt;
+      group.position.addScaledVector(dir, speed*dt);
+
+      // 화염 코어 깜빡임
+      flicker += dt*20;
+      flame.scale.setScalar(0.5 + Math.sin(flicker)*0.06);
+
+      if(Math.random()<0.85){
+        spawnEmberParticle(group.position.clone().addScaledVector(dir,-0.45));
+      }
+
+      if(life>2.4 || group.position.length()>900){ scene.remove(group); return true; }
+      return false;
+    }
+  };
+  activeObjects.push(obj);
+}
+
+let camShakeTime = 0, camShakeMag = 0;
+function camShake(mag, dur){ camShakeMag = mag; camShakeTime = dur; }
+
+/* =========================================================
+   영역전개
+========================================================= */
+let domainGojo = null, domainSukuna = null;
+
+function toggleDomainGojo(){
+  if(domainGojo){
+    scene.remove(domainGojo.group);
+    domainGojo = null;
+    updateDomainStatus();
+    return;
+  }
+  const group = new THREE.Group();
+  const center = player.position.clone().add(new THREE.Vector3(0,1,0));
+  group.position.copy(center);
+
+  const outer = new THREE.Mesh(
+    new THREE.SphereGeometry(15,32,32),
+    new THREE.MeshStandardMaterial({color:0x2a0a4a, transparent:true, opacity:0.16, side:THREE.DoubleSide, emissive:0x6a1fff, emissiveIntensity:0.5})
+  );
+  group.add(outer);
+
+  const wire = new THREE.Mesh(
+    new THREE.SphereGeometry(15,20,20),
+    new THREE.MeshBasicMaterial({color:0xb98bff, wireframe:true, transparent:true, opacity:0.35})
+  );
+  group.add(wire);
+
+  const innerLight = new THREE.PointLight(0x8b3bff, 3, 32);
+  group.add(innerLight);
+
+  scene.add(group);
+  domainGojo = {group, outer, wire, t:0};
+  updateDomainStatus();
+}
+
+function toggleDomainSukuna(){
+  if(domainSukuna){
+    scene.remove(domainSukuna.group);
+    domainSukuna = null;
+    updateDomainStatus();
+    return;
+  }
+  const group = new THREE.Group();
+  const center = player.position.clone();
+  center.y = 0;
+  group.position.copy(center);
+
+  const outer = new THREE.Mesh(
+    new THREE.SphereGeometry(15,40,40),
+    new THREE.MeshStandardMaterial({color:0x5a0000, transparent:true, opacity:0.09, side:THREE.DoubleSide, emissive:0xff2200, emissiveIntensity:0.4})
+  );
+  group.add(outer);
+
+  const wire = new THREE.Mesh(
+    new THREE.SphereGeometry(15,20,20),
+    new THREE.MeshBasicMaterial({color:0xff6a4a, wireframe:true, transparent:true, opacity:0.2})
+  );
+  group.add(wire);
+
+  const innerLight = new THREE.PointLight(0xff2200, 4, 32);
+  innerLight.position.y = 10;
+  group.add(innerLight);
+
+  scene.add(group);
+  domainSukuna = {group, outer, wire, t:0, slashTimer:0};
+  updateDomainStatus();
+}
+
+function updateDomainStatus(){
+  const el = document.getElementById('domainStatus');
+  const active = [];
+  if(domainGojo) active.push('무량공처 전개중 (반경 15m)');
+  if(domainSukuna) active.push('복마어주자 전개중 (반경 15m)');
+  if(active.length){
+    el.style.display = 'inline-block';
+    el.textContent = active.join(' / ');
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function updateDomains(dt){
+  if(domainGojo){
+    domainGojo.t += dt;
+    domainGojo.wire.rotation.y += dt*0.15;
+    domainGojo.outer.material.opacity = 0.13 + Math.sin(domainGojo.t*1.5)*0.03;
+  }
+  if(domainSukuna){
+    domainSukuna.t += dt;
+    domainSukuna.wire.rotation.y -= dt*0.08;
+    domainSukuna.outer.material.opacity = 0.06 + Math.sin(domainSukuna.t*1.2)*0.02;
+
+    domainSukuna.slashTimer -= dt;
+    if(domainSukuna.slashTimer<=0){
+      domainSukuna.slashTimer = 1/20; // 초당 20회
+      spawnShrineSlash(domainSukuna.group.position);
+    }
+  }
+}
+
+function spawnShrineSlash(centerPos){
+  const r = 2 + Math.random()*11;
+  const ang = Math.random()*Math.PI*2;
+  const h = Math.random()*5;
+  const pos = new THREE.Vector3(centerPos.x + Math.cos(ang)*r, h, centerPos.z + Math.sin(ang)*r);
+
+  const size = 4 + Math.random()*7;
+  const blade = createSlashBlade(0xffb0a0, size);
+  blade.userData.damage = SHRINE_SLASH_DAMAGE; // 복마어주자 필중 참격: 마나와 무관하게 고정 30
+  blade.position.copy(pos);
+  blade.rotation.set(Math.random()*Math.PI*2, Math.random()*Math.PI*2, Math.random()*Math.PI*2);
+  scene.add(blade);
+
+  let life = 0;
+  const duration = 0.28;
+  activeObjects.push({
+    update(dt){
+      life += dt;
+      const p = life/duration;
+      blade.material.opacity = 0.9*(1-p);
+      blade.scale.setScalar(1 + p*0.8);
+      if(life>duration){ scene.remove(blade); return true; }
+      return false;
+    }
+  });
+}
+
+/* =========================================================
+   HP / 마나 (반전술식 자동 회복)
+========================================================= */
+const MAX_HP = 100;
+const MAX_MANA = 300;
+let hp = MAX_HP;
+let mana = MAX_MANA;
+
+function updateResourceUI(){
+  document.getElementById('hpFill').style.width = (hp/MAX_HP*100) + '%';
+  document.getElementById('mpFill').style.width = (mana/MAX_MANA*100) + '%';
+  document.getElementById('hpNum').textContent = Math.ceil(hp) + '/' + MAX_HP;
+  document.getElementById('mpNum').textContent = Math.ceil(mana) + '/' + MAX_MANA;
+}
+
+function updateResources(dt){
+  // 반전술식: 마나가 100 초과일 때만 HP가 초당 5씩 서서히 회복됨 (마나 100 이하면 회복 정지)
+  if(mana > 100){
+    hp = Math.min(MAX_HP, hp + 5*dt);
+  }
+
+  const gojoDraining = !!domainGojo;
+  const sukunaDraining = !!domainSukuna;
+
+  if(gojoDraining || sukunaDraining){
+    // 영역전개 중엔 반전술식 회복 대신, 열려있는 영역 개수만큼 초당 30씩 순수 소모 (10초 풀로 유지 시 정확히 300 소모)
+    let drain = 0;
+    if(gojoDraining) drain += 30;
+    if(sukunaDraining) drain += 30;
+    mana = Math.max(0, mana - drain*dt);
+  } else {
+    mana = Math.min(MAX_MANA, mana + 10*dt); // 마나 회복 초당 10으로 변경
+  }
+
+  // 마나가 바닥나면 해당 영역 자동 종료 + 강제 종료는 항상 풀 쿨타임 적용(단축 없음)
+  if(gojoDraining && mana<=0){
+    toggleDomainGojo();
+    domainTimer.gojo = 0;
+    cooldowns.gojo[4] = SKILL_COOLDOWN.gojo[4];
+  }
+  if(sukunaDraining && mana<=0){
+    toggleDomainSukuna();
+    domainTimer.sukuna = 0;
+    cooldowns.sukuna[4] = SKILL_COOLDOWN.sukuna[4];
+  }
+
+  updateResourceUI();
+}
+
+/* =========================================================
+   고죠 사토루 무량공처: 무피해 + 속박(행동불가) 스텁
+   (현재는 적이 없어 배열이 비어있지만, 나중에 적을 enemies에 등록하면
+    바로 동작하도록 미리 구현해둔 부분)
+========================================================= */
+let enemies = []; // {mesh, restrained} 형태로 추후 등록
+
+function updateGojoDomainRestraint(){
+  if(!domainGojo){
+    enemies.forEach(e=>{ e.restrained = false; });
+    return;
+  }
+  const center = domainGojo.group.position;
+  enemies.forEach(e=>{
+    const d = e.mesh.position.distanceTo(center);
+    e.restrained = (d <= 15); // 무량공처 반경(15m) 안이면 속박 - 데미지는 없음
+  });
+}
+
+/* =========================================================
+   스킬 사용 (마나 비용 / 쿨타임 / 영역 지속시간)
+========================================================= */
+const SKILL_COOLDOWN = {
+  gojo:   {1:3, 2:3, 3:5, 4:30},
+  sukuna: {1:1, 2:3, 3:5, 4:30} // 해(Q)는 스쿠나 전용 1초 쿨타임
+}; // 초 단위
+const SKILL_MANA_COST = {1:20, 2:20, 3:50};   // 영역(4)은 초당 소모라 별도 처리
+const DOMAIN_DURATION = 10; // 영역 지속시간(초)
+const SHRINE_SLASH_DAMAGE = 30; // 복마어주자 참격 1회당 고정 데미지(마나와 무관, 필중)
+
+let cooldowns = {
+  gojo:   {1:0, 2:0, 3:0, 4:0},
+  sukuna: {1:0, 2:0, 3:0, 4:0}
+};
+let domainTimer = { gojo:0, sukuna:0 }; // 영역이 열려있는 동안 남은 지속시간
+
+function useSkill(n){
+  if(cooldowns[character][n] > 0){
+    flashSlotBlocked(n);
+    return;
+  }
+
+  if(n===4){
+    handleDomainToggle();
+    return;
+  }
+
+  const cost = SKILL_MANA_COST[n];
+  if(mana < cost){
+    flashSlotBlocked(n); // 마나 부족 -> 발동 불가
+    return;
+  }
+  mana -= cost;
+  updateResourceUI();
+
+  flashSlot(n);
+  cooldowns[character][n] = SKILL_COOLDOWN[character][n];
+  const damage = cost; // 기본 스킬 데미지는 소모 마나에 비례(1:1)
+  const fp = viewMode==='first';
+
+  if(character==='gojo'){
+    if(n===1){ spawnOrb(0xff3131, 0.3, true, false, damage); if(fp) triggerHandAnim('right','throw'); }
+    else if(n===2){ spawnOrb(0x2f7bff, 0.3, false, true, damage); if(fp) triggerHandAnim('left','throw'); }
+    else if(n===3){ spawnHollowPurple(damage); if(fp){ triggerHandAnim('left','throw'); triggerHandAnim('right','throw'); } }
+  } else {
+    if(n===1){ spawnSlash(true,false,damage); if(fp) triggerHandAnim('right','slash'); } // 근접공격
+    else if(n===2){ spawnFlyingSlash(damage); if(fp) triggerHandAnim('right','slash'); } // 참격을 멀리 던짐
+    else if(n===3){
+      if(fp){
+        triggerBowAnim();
+        // 시위를 놓는 타이밍(약 0.31초 후)에 맞춰 화살 발사
+        setTimeout(()=>{ if(character==='sukuna') spawnFireArrow(damage); }, 310);
+      } else {
+        spawnFireArrow(damage);
+      }
+    }
+  }
+}
+
+// 영역전개: 켤 때 10초 지속 타이머 시작(마나는 매 프레임 소모), 끌 때(수동/자동 모두) 30초 쿨타임 시작
+function handleDomainToggle(){
+  const isGojo = character==='gojo';
+  const active = isGojo ? domainGojo : domainSukuna;
+  const fp = viewMode==='first';
+
+  if(!active && mana<=0){
+    flashSlotBlocked(4); // 마나가 없으면 영역 시작 불가
+    return;
+  }
+
+  flashSlot(4);
+
+  if(active){
+    // 수동으로 조기 해제 -> 남은 지속시간만큼 쿨타임을 단축해서 즉시 적용
+    // ex. 10초 중 5초 사용 후 취소 -> 남은 5초만큼 깎여서 쿨타임 25초
+    const remaining = Math.max(0, domainTimer[character]);
+    if(isGojo) toggleDomainGojo(); else toggleDomainSukuna();
+    domainTimer[character] = 0;
+    cooldowns[character][4] = Math.max(0, SKILL_COOLDOWN[character][4] - remaining);
+  } else {
+    if(isGojo) toggleDomainGojo(); else toggleDomainSukuna();
+    domainTimer[character] = DOMAIN_DURATION;
+    if(fp){
+      if(isGojo){
+        triggerHandAnim('right','raise'); // 고죠: 오른손을 들어올려 전개
+      } else {
+        triggerHandAnim('left','gather');
+        triggerHandAnim('right','gather'); // 스쿠나: 양손을 모아 전개
+      }
+    }
+  }
+}
+
+function updateCooldowns(dt){
+  ['gojo','sukuna'].forEach(ch=>{
+    for(let i=1;i<=4;i++){
+      if(cooldowns[ch][i] > 0) cooldowns[ch][i] = Math.max(0, cooldowns[ch][i]-dt);
+    }
+  });
+}
+
+function updateDomainDurations(dt){
+  if(domainGojo){
+    domainTimer.gojo -= dt;
+    if(domainTimer.gojo <= 0){
+      toggleDomainGojo();
+      cooldowns.gojo[4] = SKILL_COOLDOWN.gojo[4];
+    }
+  }
+  if(domainSukuna){
+    domainTimer.sukuna -= dt;
+    if(domainTimer.sukuna <= 0){
+      toggleDomainSukuna();
+      cooldowns.sukuna[4] = SKILL_COOLDOWN.sukuna[4];
+    }
+  }
+}
+
+function updateSkillUI(){
+  for(let i=1;i<=4;i++){
+    const remaining = cooldowns[character][i];
+    const total = SKILL_COOLDOWN[character][i];
+    const overlay = document.getElementById('cd'+i);
+    const text = document.getElementById('cdText'+i);
+    if(remaining > 0){
+      overlay.style.height = (remaining/total*100) + '%';
+      text.textContent = Math.ceil(remaining);
+    } else {
+      overlay.style.height = '0%';
+      text.textContent = '';
+    }
+  }
+  const slot4 = document.getElementById('slot4');
+  const domainActiveNow = character==='gojo' ? !!domainGojo : !!domainSukuna;
+  slot4.classList.toggle('active', domainActiveNow);
+}
+
+/* --- 스쿠나 "팔": 참격 하나를 멀리 날려보내는 원거리 공격으로 리워크 --- */
+function spawnFlyingSlash(damage){
+  const color = 0xfff2df;
+  const size = 1.3;
+
+  const billboard = new THREE.Group();
+  billboard.userData.damage = damage || 0;
+  const blade = createSlashBlade(color, size);
+  blade.rotation.z = (Math.random()-0.5)*0.5;
+  billboard.add(blade);
+
+  const origin = player.position.clone().add(new THREE.Vector3(0,1.4,0)).addScaledVector(getForwardVector(), 1.2);
+  billboard.position.copy(origin);
+  billboard.quaternion.copy(camera.quaternion);
+  scene.add(billboard);
+
+  const light = new THREE.PointLight(color, 2.6, 8);
+  billboard.add(light);
+
+  const dir = getForwardVector();
+  const speed = 32;
+  const maxLife = 1.6;
+  let life = 0;
+
+  const obj = {
+    update(dt){
+      life += dt;
+      billboard.position.addScaledVector(dir, speed*dt);
+      billboard.quaternion.copy(camera.quaternion); // 계속 카메라를 향해 또렷하게
+      blade.rotation.z += dt*7; // 회전하며 날아가는 참격
+
+      const fadeStart = maxLife*0.7;
+      if(life > fadeStart){
+        blade.material.opacity = Math.max(0, 0.95*(1-(life-fadeStart)/(maxLife-fadeStart)));
+      }
+
+      if(life > maxLife || billboard.position.length() > 900){
+        scene.remove(billboard);
+        return true;
+      }
+      return false;
+    }
+  };
+  activeObjects.push(obj);
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if(started){
+    updateMovement(dt);
+    updateCamera();
+    updateDomains(dt);
+    updateHandAnims(dt);
+    updateCooldowns(dt);
+    updateDomainDurations(dt);
+    updateResources(dt);
+    updateGojoDomainRestraint();
+    updateSkillUI();
+
+    for(let i=activeObjects.length-1;i>=0;i--){
+      const done = activeObjects[i].update(dt);
+      if(done) activeObjects.splice(i,1);
+    }
+
+    window.clouds.forEach((c,i)=>{ c.position.x += dt*(1.2+i*0.15); if(c.position.x>1200) c.position.x=-1200; });
+
+    if(camShakeTime>0){
+      camShakeTime -= dt;
+      const s = camShakeMag * (camShakeTime>0?1:0);
+      camera.position.x += (Math.random()-0.5)*s;
+      camera.position.y += (Math.random()-0.5)*s;
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+init();
+animate();
+</script>
+</body>
+</html>
