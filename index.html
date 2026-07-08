@@ -505,7 +505,7 @@ const SKILL_INFO = {
     {key:'Q', name:'해(解)', desc:'근접 참격', cost:'MP20 · 쿨 1초'},
     {key:'E', name:'팔(捌)', desc:'참격을 멀리 던짐', cost:'MP20 · 쿨 3초'},
     {key:'C', name:'조(弔)', desc:'불꽃 화살(오의) (속박: 영역전개 재사용 대기 중 2배 강화, 쿨타임 1.4배 감소)', cost:'MP50 · 쿨 5초'},
-    {key:'X', name:'복마어주자', desc:'영역전개 · 참격당 15 데미지', cost:'MP초당30 · 10초/쿨30초'}
+    {key:'X', name:'복마어주자', desc:'영역전개 · 참격당 30 데미지', cost:'MP초당30 · 10초/쿨30초'}
   ]
 };
 
@@ -1226,7 +1226,7 @@ function handleNetMessage(msg){
     restrained = msg.on;
     document.getElementById('restrainBanner').style.display = restrained ? 'block' : 'none';
   }
-  else if(msg.t === 'md'){ // 속박 중 마나 흡수(상대의 무량공처에 의해 초당 5~10 랜덤 차감)
+  else if(msg.t === 'md'){ // 속박 중 마나 흡수(상대의 무량공처에 의해 초당 30~50 랜덤 차감)
     mana = Math.max(0, mana - msg.amt);
     updateResourceUI();
   }
@@ -2135,7 +2135,7 @@ function updateDomains(dt){
 
     domainSukuna.slashTimer -= dt;
     if(domainSukuna.slashTimer<=0){
-      domainSukuna.slashTimer = 1/14; // 초당 14회
+      domainSukuna.slashTimer = 1/30; // 초당 30회
       spawnShrineSlash(domainSukuna.group.position);
     }
   }
@@ -2264,7 +2264,7 @@ function spawnShrineSlash(centerPos, owner, posOverride, sizeOverride){
   }
 
   // 참격의 시각적 크기에 맞춘 판정 반경. 이 범위 안에 상대가 실제로 있어야만 데미지가 들어간다.
-  const hitRadius = size * 0.55;
+  const hitRadius = size * 0.75;
   let hit = false;
   let life = 0;
   const duration = 0.28;
@@ -2367,12 +2367,12 @@ function updateGojoDomainRestraint(dt){
     if(!inside) manaSiphonTimer = 0;
   }
 
-  // 속박된 상대의 마나를 초당 5~10 랜덤으로 빨아들여 내 마나로 회복
+  // 속박된 상대의 마나를 초당 30~50 랜덤으로 빨아들여 내 마나로 회복
   if(inside){
     manaSiphonTimer -= dt;
     if(manaSiphonTimer <= 0){
       manaSiphonTimer = 1.0; // 1초에 한 번
-      const amt = 5 + Math.random()*5; // 5~10 랜덤
+      const amt = 30 + Math.random()*20; // 30~50 랜덤
       sendNet({t:'md', amt}); // 상대에게 마나 차감 전달
       mana = Math.min(maxManaOf(character), mana + amt); // 흡수한 만큼 내 마나 회복
       updateResourceUI();
@@ -2415,7 +2415,7 @@ const SKILL_DAMAGE_ENHANCED = {
 };
 
 const DOMAIN_DURATION = 10; // 영역 지속시간(초)
-const SHRINE_SLASH_DAMAGE = 15; // 복마어주자 참격 1회당 고정 데미지(마나와 무관, 필중 - 랜덤 위치에 생성되는 참격 하나하나가 실제로 상대에 닿아야만 들어감)
+const SHRINE_SLASH_DAMAGE = 30; // 복마어주자 참격 1회당 고정 데미지(마나와 무관, 필중 - 랜덤 위치에 생성되는 참격 하나하나가 실제로 상대에 닿아야만 들어감)
 const SUKUNA_EXECUTE_HP_THRESHOLD = 44; // 스쿠나 스킬로 피해를 준 뒤 상대의 남은 HP가 이 값 미만이면 처형(완전 소멸)
 const GOJO_RESTRAINT_BONUS_PCT = 0.07; // 고죠 영역에 속박된 상대가 고죠 스킬에 맞으면, 피격 시점 HP의 이 비율만큼 추가로 감소
 
