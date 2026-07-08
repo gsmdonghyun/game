@@ -1755,7 +1755,7 @@ function spawnOrb(color, size, fromRight, pull, damage, owner, originOverride, d
         }
       }
 
-      if(owner==='local' && !hit && checkRemoteHit(orb.position, 1.1, orb.userData.damage)){
+      if(owner==='local' && !hit && checkRemoteHit(orb.position, 1.8*orb.scale.x, orb.userData.damage)){
         hit = true;
         scene.remove(orb);
         trailParticles.forEach(tp=>scene.remove(tp.mesh));
@@ -1824,7 +1824,7 @@ function spawnHollowPurple(damage, owner, originOverride, dirOverride, enhanced)
       ring.rotation.x += dt*6;
       if(life>0.55 && !shook){ shook = true; camShake(0.35, 0.5); }
 
-      if(owner==='local' && !hit && checkRemoteHit(orb.position, 1.3, orb.userData.damage)){
+      if(owner==='local' && !hit && checkRemoteHit(orb.position, 2.0*orb.scale.x, orb.userData.damage)){
         hit = true;
         scene.remove(orb);
         return true;
